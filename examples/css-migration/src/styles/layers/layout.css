@@ -1,0 +1,9 @@
+@import '../tokens.css';
+
+@layer layout {
+  main,
+  section,
+  aside {
+    box-sizing: border-box;
+  }
+}

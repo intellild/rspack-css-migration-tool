@@ -60,6 +60,7 @@ node scripts/compare-output-files.mjs \
   --before path/to/css-loader-dist \
   --after path/to/builtin-css-dist \
   --extensions css \
+  --diff-out report.diff \
   --out report.md
 ```
 
@@ -67,19 +68,27 @@ When both directories contain an output graph, the script uses module/chunk
 relationships automatically. Otherwise it falls back to normalized filenames.
 Use `--require-graph` in CI to prevent an accidental fallback.
 
+Before generating the unified diff, supported text assets are formatted with
+Prettier. CSS Modules hash suffixes and the filename separator difference
+between css-loader and built-in CSS are normalized after formatting. The report
+records formatted sizes and line changes; use `--no-css-module-normalize` when
+the generated identifiers themselves need to be inspected.
+
 ## Example and test fixture
 
 [`examples/css-migration`](./examples/css-migration) builds the same source
-once with css-loader and once with built-in CSS. It deliberately gives the two
-sets of CSS assets different prefixes, then verifies that graph matching still
-pairs the entry and async styles correctly.
+once with css-loader and once with built-in CSS. It includes nested, circular,
+repeated, and lazy module relationships plus CSS Modules. The output names and
+CSS Modules hashes differ between builds, so the fixture verifies graph-based
+pairing and normalized content diffs rather than filename equality.
 
 ```bash
 pnpm run example
 ```
 
-The comparison report is written to
-`examples/css-migration/dist/report.md`.
+The comparison report and unified diff are written to
+`examples/css-migration/dist/report.md` and
+`examples/css-migration/dist/report.diff`.
 
 ## Development
 

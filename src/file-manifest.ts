@@ -16,6 +16,10 @@ import {
   type AssetKind,
   type NormalizeAssetNameOptions,
 } from './normalize';
+import {
+  renderOutputContentSummaryMarkdown,
+  type OutputContentComparison,
+} from './output-content-compare';
 
 export interface OutputFileRecord {
   path: string;
@@ -223,6 +227,8 @@ export function summarizeFiles(
 export interface RenderFileManifestDiffOptions {
   title?: string;
   top?: number;
+  contentComparison?: OutputContentComparison;
+  contentDiffFilename?: string;
 }
 
 export function renderOutputFileDiffMarkdown(
@@ -289,6 +295,18 @@ export function renderOutputFileDiffMarkdown(
   }
   if (comparison.removed.length > top) {
     lines.push(`- ... ${comparison.removed.length - top} more`);
+  }
+
+  if (options.contentComparison) {
+    lines.push(
+      '',
+      ...renderOutputContentSummaryMarkdown(options.contentComparison, {
+        diffFilename: options.contentDiffFilename,
+        top,
+      })
+        .trimEnd()
+        .split('\n'),
+    );
   }
 
   return `${lines.join('\n')}\n`;

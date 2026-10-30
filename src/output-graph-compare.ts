@@ -1,11 +1,17 @@
 import { readFileSync } from 'node:fs';
 import { bytesToHuman, signedBytes, type AssetKind } from './normalize';
+import {
+  renderOutputContentSummaryMarkdown,
+  type OutputContentComparison,
+} from './output-content-compare';
 import type { OutputGraph, OutputGraphAsset } from './output-graph-plugin';
 
 export interface OutputGraphComparisonOptions {
   minScore?: number;
   extensions?: string[];
   top?: number;
+  contentComparison?: OutputContentComparison;
+  contentDiffFilename?: string;
 }
 
 export interface OutputGraphComparison {
@@ -428,6 +434,18 @@ export function renderOutputGraphDiffMarkdown(
   }
   if (comparison.removed.length > top) {
     lines.push(`- ... ${comparison.removed.length - top} more`);
+  }
+
+  if (options.contentComparison) {
+    lines.push(
+      '',
+      ...renderOutputContentSummaryMarkdown(options.contentComparison, {
+        diffFilename: options.contentDiffFilename,
+        top,
+      })
+        .trimEnd()
+        .split('\n'),
+    );
   }
 
   return `${lines.join('\n')}\n`;

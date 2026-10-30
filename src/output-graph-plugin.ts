@@ -372,26 +372,55 @@ function collectChunkModules(
   const iterable = compilation.chunkGraph?.getChunkModulesIterable?.(chunk);
   if (!iterable) return [];
 
-  const modules = [...iterable].map((module) => {
-    const reference = createModuleReference(module, context);
-    const moduleLike = module as { type?: string };
-    const type = moduleLike.type ?? null;
-
-    return {
-      ...reference,
-      id: compilation.chunkGraph?.getModuleId?.(module) ?? null,
-      type,
-      style:
-        Boolean(type?.startsWith('css')) ||
-        STYLE_RESOURCE.test(reference.resource ?? reference.identifier),
-      issuer: findLogicalIssuer(compilation, module, reference, context),
-    };
-  });
+  const modules: OutputGraphModule[] = [];
+  const visited = new Set<unknown>();
+  for (const module of iterable) {
+    collectModuleAndNested(compilation, module, context, modules, visited, 0);
+  }
 
   return modules.sort((left, right) => {
     const byKey = left.key.localeCompare(right.key);
     return byKey || left.identifier.localeCompare(right.identifier);
   });
+}
+
+function collectModuleAndNested(
+  compilation: RspackCompilationLike,
+  module: unknown,
+  context: string | undefined,
+  result: OutputGraphModule[],
+  visited: Set<unknown>,
+  depth: number,
+): void {
+  if (visited.has(module) || depth >= 64) return;
+  visited.add(module);
+
+  const reference = createModuleReference(module, context);
+  const moduleLike = module as {
+    type?: string;
+    modules?: Iterable<unknown>;
+  };
+  const type = moduleLike.type ?? null;
+  result.push({
+    ...reference,
+    id: compilation.chunkGraph?.getModuleId?.(module) ?? null,
+    type,
+    style:
+      Boolean(type?.startsWith('css')) ||
+      STYLE_RESOURCE.test(reference.resource ?? reference.identifier),
+    issuer: findLogicalIssuer(compilation, module, reference, context),
+  });
+
+  for (const nestedModule of toIterable(moduleLike.modules)) {
+    collectModuleAndNested(
+      compilation,
+      nestedModule,
+      context,
+      result,
+      visited,
+      depth + 1,
+    );
+  }
 }
 
 function findLogicalIssuer(
@@ -404,11 +433,19 @@ function findLogicalIssuer(
   if (!moduleGraph?.getIssuer) return null;
 
   const visited = new Set<unknown>([module]);
+  const visitedSignatures = new Set<string>([
+    `${moduleReference.key}\0${moduleReference.identifier}`,
+  ]);
   let issuer = moduleGraph.getIssuer(module);
-  while (issuer && !visited.has(issuer)) {
+  let depth = 0;
+  while (issuer && !visited.has(issuer) && depth < 64) {
+    depth += 1;
     visited.add(issuer);
     const issuerReference = createModuleReference(issuer, context);
     if (issuerReference.key !== moduleReference.key) return issuerReference;
+    const signature = `${issuerReference.key}\0${issuerReference.identifier}`;
+    if (visitedSignatures.has(signature)) return null;
+    visitedSignatures.add(signature);
     issuer = moduleGraph.getIssuer(issuer);
   }
   return null;

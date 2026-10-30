@@ -1,0 +1,8 @@
+@import './layers/layout.css';
+@import './tokens.css';
+
+body {
+  margin: 0;
+  color: #1f2937;
+  font-family: system-ui, sans-serif;
+}

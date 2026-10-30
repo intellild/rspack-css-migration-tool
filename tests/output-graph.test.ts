@@ -65,6 +65,18 @@ describe('createOutputGraph', () => {
       type: 'javascript/auto',
       resource: '/project/src/index.js',
       identifier: () => '/project/src/index.js',
+      modules: [
+        {
+          type: 'javascript/esm',
+          resource: '/project/src/cycle/a.js',
+          identifier: () => '/project/src/cycle/a.js',
+        },
+        {
+          type: 'javascript/esm',
+          resource: '/project/src/cycle/b.js',
+          identifier: () => '/project/src/cycle/b.js',
+        },
+      ],
     };
     const sizes = new Map([
       ['assets/main.12345678.css', 120],
@@ -115,11 +127,22 @@ describe('createOutputGraph', () => {
     expect(css?.styleModuleKeys).toEqual(['resource:src/main.css']);
     expect(css?.issuerModuleKeys).toEqual(['resource:src/index.js']);
     expect(css?.bytes).toBe(120);
-    expect(output.chunks[0]?.modules[0]).toMatchObject({
+    expect(output.chunks[0]?.moduleResources).toEqual(
+      expect.arrayContaining(['src/cycle/a.js', 'src/cycle/b.js']),
+    );
+    expect(
+      output.chunks[0]?.modules.find(
+        (module) => module.resource === 'src/index.js',
+      ),
+    ).toMatchObject({
       id: 2,
       resource: 'src/index.js',
     });
-    expect(output.chunks[0]?.modules[1]).toMatchObject({
+    expect(
+      output.chunks[0]?.modules.find(
+        (module) => module.resource === 'src/main.css',
+      ),
+    ).toMatchObject({
       id: 1,
       resource: 'src/main.css',
       style: true,

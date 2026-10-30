@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { rspack } from '@rspack/core';
 
 export const exampleRoot = path.dirname(fileURLToPath(import.meta.url));
+export const cssModuleLocalIdentName = 'cm_[name]_[local]__[hash:base64:5]';
 
 function commonConfig(name, outputPath, OutputGraphPlugin) {
   return {
@@ -35,7 +36,20 @@ export function createCssLoaderConfig(outputPath, OutputGraphPlugin) {
       {
         test: /\.css$/i,
         type: 'javascript/auto',
-        use: [rspack.CssExtractRspackPlugin.loader, 'css-loader'],
+        use: [
+          rspack.CssExtractRspackPlugin.loader,
+          {
+            loader: 'css-loader',
+            options: {
+              modules: {
+                auto: /\.module\.css$/i,
+                namedExport: true,
+                exportLocalsConvention: 'as-is',
+                localIdentName: cssModuleLocalIdentName,
+              },
+            },
+          },
+        ],
       },
     ],
   };
@@ -53,7 +67,16 @@ export function createBuiltinCssConfig(outputPath, OutputGraphPlugin) {
   config.output.cssFilename = 'assets/builtin-[name].[contenthash:8].css';
   config.output.cssChunkFilename = 'assets/builtin-[name].[contenthash:8].css';
   config.module = {
-    rules: [{ test: /\.css$/i, type: 'css' }],
+    rules: [{ test: /\.css$/i, type: 'css/auto' }],
+    parser: {
+      'css/auto': { namedExports: true },
+    },
+    generator: {
+      'css/auto': {
+        exportsConvention: 'as-is',
+        localIdentName: cssModuleLocalIdentName,
+      },
+    },
   };
   return config;
 }

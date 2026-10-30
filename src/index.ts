@@ -57,3 +57,17 @@ export {
   type OutputGraphComparisonOptions,
   type OutputGraphSummary,
 } from './output-graph-compare';
+
+export {
+  compareOutputContents,
+  formatOutputText,
+  normalizeCssModuleHashes,
+  renderOutputContentDiff,
+  renderOutputContentSummaryMarkdown,
+  type CompareOutputContentsOptions,
+  type OutputContentComparison,
+  type OutputContentDiff,
+  type OutputContentDiffStatus,
+  type OutputContentPair,
+  type RenderOutputContentSummaryOptions,
+} from './output-content-compare';

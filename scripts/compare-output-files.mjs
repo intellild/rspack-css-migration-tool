@@ -13,6 +13,10 @@ Options:
   --extensions css,js    Only compare these extensions
   --hash                 Hash file contents in filename-only mode
   --min-score 0.35       Minimum graph matching confidence
+  --diff-out report.diff Write a unified diff of Prettier-formatted contents
+  --no-content-diff      Skip content formatting and unified diff generation
+  --no-css-module-normalize
+                         Keep generated CSS Modules hashes in content diffs
   --top 50               Maximum detailed rows per section
   --out report.md        Write the report instead of printing it
 
@@ -54,11 +58,14 @@ function parseArgs(args) {
     beforeGraph,
     afterGraph,
     out: valueOf(args, '--out'),
+    diffOut: valueOf(args, '--diff-out'),
     top: Number.parseInt(valueOf(args, '--top', '50'), 10),
     minScore: Number.parseFloat(valueOf(args, '--min-score', '0.35')),
     hashContent: args.includes('--hash'),
     graph: !args.includes('--no-graph'),
     requireGraph: args.includes('--require-graph'),
+    contentDiff: !args.includes('--no-content-diff'),
+    normalizeCssModuleHashes: !args.includes('--no-css-module-normalize'),
     extensions: extensions
       ? extensions.split(',').map((item) => item.trim())
       : undefined,
@@ -84,6 +91,7 @@ const hasBeforeGraph = existsSync(beforeGraph);
 const hasAfterGraph = existsSync(afterGraph);
 
 let markdown;
+let contentComparison;
 if (options.graph && hasBeforeGraph && hasAfterGraph) {
   const before = tool.loadOutputGraph(beforeGraph);
   const after = tool.loadOutputGraph(afterGraph);
@@ -91,8 +99,23 @@ if (options.graph && hasBeforeGraph && hasAfterGraph) {
     extensions: options.extensions,
     minScore: options.minScore,
   });
+  if (options.contentDiff) {
+    contentComparison = await tool.compareOutputContents(
+      comparison.matched.map((match) => ({
+        beforeName: match.before.name,
+        afterName: match.after.name,
+      })),
+      {
+        beforeRoot: options.before,
+        afterRoot: options.after,
+        normalizeCssModuleHashes: options.normalizeCssModuleHashes,
+      },
+    );
+  }
   markdown = tool.renderOutputGraphDiffMarkdown(comparison, {
     top: options.top,
+    contentComparison,
+    contentDiffFilename: getContentDiffOutput(options),
   });
   console.error(`Compared output graphs: ${beforeGraph} -> ${afterGraph}`);
 } else {
@@ -122,14 +145,56 @@ if (options.graph && hasBeforeGraph && hasAfterGraph) {
     ignore: [ignoredGraph],
   });
   const comparison = tool.compareOutputFileManifests(before, after);
+  if (options.contentDiff) {
+    contentComparison = await tool.compareOutputContents(
+      comparison.matched.map((match) => ({
+        beforeName: match.before.path,
+        afterName: match.after.path,
+      })),
+      {
+        beforeRoot: options.before,
+        afterRoot: options.after,
+        normalizeCssModuleHashes: options.normalizeCssModuleHashes,
+      },
+    );
+  }
   markdown = tool.renderOutputFileDiffMarkdown(comparison, {
     top: options.top,
+    contentComparison,
+    contentDiffFilename: getContentDiffOutput(options),
   });
 }
+
+const contentDiffOutput = getContentDiffOutput(options);
+if (contentComparison) {
+  const contentDiff = tool.renderOutputContentDiff(contentComparison);
+  if (contentDiffOutput) {
+    writeFileSync(contentDiffOutput, contentDiff);
+  } else {
+    markdown += `\n## Unified Content Diff\n\n\`\`\`diff\n${contentDiff}\`\`\`\n`;
+  }
+}
+
+markdown = await tool.formatOutputText(
+  markdown,
+  options.out ?? 'output-diff-report.md',
+  { parser: 'markdown' },
+);
 
 if (options.out) {
   writeFileSync(options.out, markdown);
   console.log(`Report saved to: ${options.out}`);
+  if (contentDiffOutput) {
+    console.log(`Content diff saved to: ${contentDiffOutput}`);
+  }
 } else {
   console.log(markdown);
+}
+
+function getContentDiffOutput(options) {
+  if (!options.contentDiff) return null;
+  if (options.diffOut) return options.diffOut;
+  if (!options.out) return null;
+  const parsed = path.parse(options.out);
+  return path.join(parsed.dir, `${parsed.name}.diff`);
 }

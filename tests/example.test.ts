@@ -4,9 +4,12 @@ import path from 'node:path';
 import { rspack } from '@rspack/core';
 import { expect, test } from '@rstest/core';
 import {
+  compareOutputContents,
   compareOutputGraphs,
   DEFAULT_OUTPUT_GRAPH_FILENAME,
   loadOutputGraph,
+  renderOutputContentDiff,
+  renderOutputGraphDiffMarkdown,
   RspackOutputGraphPlugin,
 } from '../src/index';
 import { createMigrationConfigs } from '../examples/css-migration/config.mjs';
@@ -64,7 +67,7 @@ test('the example migrates from css-loader and still matches both CSS outputs', 
       extensions: ['css'],
     });
 
-    expect(comparison.matched).toHaveLength(2);
+    expect(comparison.matched).toHaveLength(4);
     expect(comparison.added).toEqual([]);
     expect(comparison.removed).toEqual([]);
     expect(
@@ -78,9 +81,90 @@ test('the example migrates from css-loader and still matches both CSS outputs', 
       ),
     ).toBe(true);
 
-    const rawGraph = readFileSync(beforeGraphPath, 'utf8');
-    expect(rawGraph).toContain('src/main.css');
-    expect(rawGraph).toContain('src/feature.css');
+    const beforeMainChunk = before.chunks.find(
+      (chunk) => chunk.name === 'main',
+    );
+    expect(beforeMainChunk?.moduleResources).toEqual(
+      expect.arrayContaining(['src/cycle/a.js', 'src/cycle/b.js']),
+    );
+    expect(before.chunks.map((chunk) => chunk.name)).toEqual(
+      expect.arrayContaining([
+        'main',
+        'dashboard',
+        'dashboard-details',
+        'settings',
+      ]),
+    );
+
+    const mainCss = comparison.matched.find((match) =>
+      match.before.entrypoints.includes('main'),
+    );
+    expect(mainCss?.before.styleModuleKeys).toEqual(
+      expect.arrayContaining([
+        'resource:src/components/app-shell.module.css',
+        'resource:src/components/card/card.module.css',
+        'resource:src/shared/theme.module.css',
+        'resource:src/styles/shared.css',
+      ]),
+    );
+    expect(
+      mainCss?.before.styleModuleKeys.filter(
+        (key) => key === 'resource:src/styles/shared.css',
+      ),
+    ).toHaveLength(1);
+
+    const contentComparison = await compareOutputContents(
+      comparison.matched.map((match) => ({
+        beforeName: match.before.name,
+        afterName: match.after.name,
+      })),
+      {
+        beforeRoot: path.join(outputRoot, 'css-loader'),
+        afterRoot: path.join(outputRoot, 'builtin-css'),
+      },
+    );
+    expect(contentComparison).toMatchObject({
+      formatted: 4,
+      equivalent: 3,
+      changed: 1,
+      skipped: 0,
+      errors: 0,
+    });
+    expect(
+      contentComparison.files.every(
+        (file) => file.cssModuleHashesNormalized > 0,
+      ),
+    ).toBe(true);
+
+    const contentDiff = renderOutputContentDiff(contentComparison);
+    expect(contentDiff).not.toMatch(/__[A-Za-z0-9_-]{5}\b/);
+    expect(contentDiff).toContain('--accent-color');
+    const report = renderOutputGraphDiffMarkdown(comparison, {
+      contentComparison,
+      contentDiffFilename: 'report.diff',
+    });
+    expect(report).toContain('Prettier-formatted Content Diff');
+    expect(report).toContain('Equivalent after normalization: 3');
+
+    const rawBeforeCss = comparison.matched
+      .map((match) =>
+        readFileSync(
+          path.join(outputRoot, 'css-loader', match.before.name),
+          'utf8',
+        ),
+      )
+      .join('\n');
+    const rawAfterCss = comparison.matched
+      .map((match) =>
+        readFileSync(
+          path.join(outputRoot, 'builtin-css', match.after.name),
+          'utf8',
+        ),
+      )
+      .join('\n');
+    expect(rawBeforeCss).toMatch(/cm_[A-Za-z0-9_-]+__[A-Za-z0-9_-]{5}/);
+    expect(rawAfterCss).toMatch(/cm_[-A-Za-z0-9_.\\]+__[A-Za-z0-9_-]{5}/);
+    expect(rawBeforeCss).not.toBe(rawAfterCss);
   } finally {
     rmSync(outputRoot, { recursive: true, force: true });
   }

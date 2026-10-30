@@ -7,6 +7,13 @@ settings:
 importers:
 
   .:
+    dependencies:
+      diff:
+        specifier: ^8.0.4
+        version: 8.0.4
+      prettier:
+        specifier: ^3.9.10
+        version: 3.9.10
     devDependencies:
       '@rslib/core':
         specifier: ^1.0.5
@@ -29,9 +36,6 @@ importers:
       css-loader:
         specifier: ^7.1.5
         version: 7.1.5(@rspack/core@2.3.0(@swc/helpers@0.5.23))
-      prettier:
-        specifier: ^3.9.10
-        version: 3.9.10
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -567,6 +571,10 @@ packages:
     engines: {node: '>=4'}
     hasBin: true
 
+  diff@8.0.4:
+    resolution: {integrity: sha512-DPi0FmjiSU5EvQV0++GFDOJ9ASQUVFh5kD+OzOnYdi7n3Wpm9hWWGfB/O2blfHcMVTL5WkQXSnRiK9makhrcnw==}
+    engines: {node: '>=0.3.1'}
+
   icss-utils@5.1.0:
     resolution: {integrity: sha512-soFhflCVWLfRNOPU3iv5Z9VUdT44xFRbzjLsEzSr5AQmgqPMTHdU3PMT1Cf1ssx8fLNJDA1juftYl+PUcv3MqA==}
     engines: {node: ^10 || ^12 || >= 14}
@@ -1038,6 +1046,8 @@ snapshots:
       '@rspack/core': 2.3.0(@swc/helpers@0.5.23)
 
   cssesc@3.0.0: {}
+
+  diff@8.0.4: {}
 
   icss-utils@5.1.0(postcss@8.5.32):
     dependencies:

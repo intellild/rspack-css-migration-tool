@@ -35,6 +35,7 @@ const configs = createMigrationConfigs(
   RspackOutputGraphPlugin,
 );
 for (const config of configs) {
+  console.log(`Building ${config.name}...`);
   await build(config);
   console.log(`Built ${config.name}`);
 }
