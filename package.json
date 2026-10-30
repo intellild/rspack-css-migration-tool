@@ -8,13 +8,18 @@
       "default": "./dist/index.js"
     }
   },
+  "bin": {
+    "rspack-css-output-compare": "./scripts/compare-output-files.mjs"
+  },
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "scripts/compare-output-files.mjs"
   ],
   "scripts": {
     "build": "rslib",
     "dev": "rslib --watch",
+    "example": "pnpm run build && node examples/css-migration/build.mjs && node scripts/compare-output-files.mjs --before examples/css-migration/dist/css-loader --after examples/css-migration/dist/builtin-css --extensions css --require-graph --out examples/css-migration/dist/report.md",
     "format": "prettier --write .",
     "lint": "rslint",
     "test": "rstest",
@@ -23,9 +28,11 @@
   "devDependencies": {
     "@rslib/core": "^1.0.5",
     "@rslint/core": "^0.9.5",
+    "@rspack/core": "^2.3.0",
     "@rstest/adapter-rslib": "^0.12.5",
     "@rstest/core": "^0.12.5",
     "@types/node": "^24.19.2",
+    "css-loader": "^7.1.5",
     "prettier": "^3.9.10",
     "typescript": "^7.0.2"
   },

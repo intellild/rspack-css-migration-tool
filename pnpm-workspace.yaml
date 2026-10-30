@@ -1,0 +1,5 @@
+minimumReleaseAgeExclude:
+  - '@rsbuild/core@2.3.0'
+  - '@rslib/core@1.0.5'
+  - '@rspack/binding-darwin-x64@2.3.0'
+  - rsbuild-plugin-dts@1.0.5
