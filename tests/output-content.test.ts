@@ -4,12 +4,12 @@ import path from 'node:path';
 import { describe, expect, test } from '@rstest/core';
 import {
   compareOutputContents,
-  normalizeCssModuleHashes,
+  normalizeCssSelectorsByDeclarations,
   renderOutputContentDiff,
 } from '../src/index';
 
 describe('output content comparison', () => {
-  test('formats CSS and normalizes implementation-specific CSS Module hashes', async () => {
+  test('matches generated selectors by declaration content', async () => {
     const root = mkdtempSync(path.join(tmpdir(), 'output-content-'));
     const beforeRoot = path.join(root, 'before');
     const afterRoot = path.join(root, 'after');
@@ -19,11 +19,11 @@ describe('output content comparison', () => {
     try {
       writeFileSync(
         path.join(beforeRoot, 'legacy.css'),
-        '.cm_card-module_root__abc12{color:red}',
+        '.legacy-generated-name{color:red}body{margin:0}',
       );
       writeFileSync(
         path.join(afterRoot, 'builtin.css'),
-        '.cm_card\\.module_root__xyz98 { color: red; }',
+        '.builtin\\.generated_name { color: red; } body { margin: 0; }',
       );
 
       const comparison = await compareOutputContents(
@@ -37,7 +37,10 @@ describe('output content comparison', () => {
         changed: 0,
         errors: 0,
       });
-      expect(comparison.files[0]?.cssModuleHashesNormalized).toBe(2);
+      expect(comparison.files[0]).toMatchObject({
+        cssDeclarationBlocksMatched: 2,
+        cssSelectorsNormalized: 1,
+      });
       expect(renderOutputContentDiff(comparison)).toContain(
         'No content differences',
       );
@@ -46,7 +49,7 @@ describe('output content comparison', () => {
     }
   });
 
-  test('creates a unified diff from Prettier-formatted content', async () => {
+  test('keeps declaration changes after matching different selectors', async () => {
     const root = mkdtempSync(path.join(tmpdir(), 'output-content-'));
     const beforeRoot = path.join(root, 'before');
     const afterRoot = path.join(root, 'after');
@@ -54,8 +57,14 @@ describe('output content comparison', () => {
     mkdirSync(afterRoot);
 
     try {
-      writeFileSync(path.join(beforeRoot, 'main.css'), 'body{color:red}');
-      writeFileSync(path.join(afterRoot, 'main.css'), 'body { color: blue; }');
+      writeFileSync(
+        path.join(beforeRoot, 'main.css'),
+        '.legacy-name{color:red;padding:1rem}',
+      );
+      writeFileSync(
+        path.join(afterRoot, 'main.css'),
+        '.builtin-name { color: blue; padding: 1rem; }',
+      );
 
       const comparison = await compareOutputContents(
         [{ beforeName: 'main.css', afterName: 'main.css' }],
@@ -67,19 +76,36 @@ describe('output content comparison', () => {
       expect(diff).toContain('-  color: red;');
       expect(diff).toContain('+  color: blue;');
       expect(diff).toContain('Prettier formatted');
+      expect(diff).not.toContain('legacy-name');
+      expect(diff).not.toContain('builtin-name');
+      expect(comparison.files[0]?.cssSelectorsNormalized).toBe(1);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  test('normalizes hashes without hiding the original local name', () => {
-    const normalized = normalizeCssModuleHashes(
-      'cm_card-module_title__abc12 cm_card\\.module_title__xyz98',
+  test('does not treat hash-shaped declaration values as selectors', () => {
+    const normalized = normalizeCssSelectorsByDeclarations(
+      '.same { content: "title__abc12"; }',
+      '.same { content: "title__xyz98"; }',
     );
 
-    expect(normalized.content).toBe(
-      'cm_card_module_title__[css-module-hash] cm_card_module_title__[css-module-hash]',
+    expect(normalized.beforeContent).toContain('title__abc12');
+    expect(normalized.afterContent).toContain('title__xyz98');
+    expect(normalized.normalizedSelectors).toBe(0);
+  });
+
+  test('does not match unrelated declaration blocks', () => {
+    const normalized = normalizeCssSelectorsByDeclarations(
+      '.before { display: grid; }',
+      '.after { color: red; }',
     );
-    expect(normalized.replacements).toBe(2);
+
+    expect(normalized).toMatchObject({
+      matchedDeclarationBlocks: 0,
+      normalizedSelectors: 0,
+    });
+    expect(normalized.beforeContent).toContain('.before');
+    expect(normalized.afterContent).toContain('.after');
   });
 });

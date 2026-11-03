@@ -59,9 +59,14 @@ export {
 } from './output-graph-compare';
 
 export {
+  normalizeCssSelectorsByDeclarations,
+  type NormalizeCssSelectorsOptions,
+  type NormalizedCssContentPair,
+} from './css-declaration-normalize';
+
+export {
   compareOutputContents,
   formatOutputText,
-  normalizeCssModuleHashes,
   renderOutputContentDiff,
   renderOutputContentSummaryMarkdown,
   type CompareOutputContentsOptions,

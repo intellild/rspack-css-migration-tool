@@ -1,7 +1,6 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { rspack } from '@rspack/core';
 import { expect, test } from '@rstest/core';
 import {
   compareOutputContents,
@@ -12,32 +11,10 @@ import {
   renderOutputGraphDiffMarkdown,
   RspackOutputGraphPlugin,
 } from '../src/index';
-import { createMigrationConfigs } from '../examples/css-migration/config.mjs';
-
-function build(config: Parameters<typeof rspack>[0]): Promise<void> {
-  const compiler = rspack(config);
-  return new Promise((resolve, reject) => {
-    compiler.run((error, stats) => {
-      const finish = (buildError?: Error) => {
-        compiler.close((closeError) => {
-          if (buildError) reject(buildError);
-          else if (closeError) reject(closeError);
-          else resolve();
-        });
-      };
-
-      if (error) {
-        finish(error);
-      } else if (!stats || stats.hasErrors()) {
-        finish(
-          new Error(stats?.toString({ colors: false }) ?? 'Rspack failed'),
-        );
-      } else {
-        finish();
-      }
-    });
-  });
-}
+import {
+  createMigrationConfigs,
+  runRspackBuild,
+} from '../examples/css-migration/config.mjs';
 
 test('the example migrates from css-loader and still matches both CSS outputs', async () => {
   const outputRoot = mkdtempSync(
@@ -45,11 +22,8 @@ test('the example migrates from css-loader and still matches both CSS outputs', 
   );
 
   try {
-    const configs = createMigrationConfigs(
-      outputRoot,
-      RspackOutputGraphPlugin,
-    ) as Parameters<typeof rspack>[0][];
-    for (const config of configs) await build(config);
+    const configs = createMigrationConfigs(outputRoot, RspackOutputGraphPlugin);
+    for (const config of configs) await runRspackBuild(config);
 
     const beforeGraphPath = path.join(
       outputRoot,
@@ -125,26 +99,27 @@ test('the example migrates from css-loader and still matches both CSS outputs', 
     );
     expect(contentComparison).toMatchObject({
       formatted: 4,
-      equivalent: 3,
-      changed: 1,
+      equivalent: 4,
+      changed: 0,
       skipped: 0,
       errors: 0,
     });
     expect(
       contentComparison.files.every(
-        (file) => file.cssModuleHashesNormalized > 0,
+        (file) =>
+          file.cssDeclarationBlocksMatched > 0 &&
+          file.cssSelectorsNormalized > 0,
       ),
     ).toBe(true);
 
     const contentDiff = renderOutputContentDiff(contentComparison);
-    expect(contentDiff).not.toMatch(/__[A-Za-z0-9_-]{5}\b/);
-    expect(contentDiff).toContain('--accent-color');
+    expect(contentDiff).toContain('No content differences');
     const report = renderOutputGraphDiffMarkdown(comparison, {
       contentComparison,
       contentDiffFilename: 'report.diff',
     });
     expect(report).toContain('Prettier-formatted Content Diff');
-    expect(report).toContain('Equivalent after normalization: 3');
+    expect(report).toContain('Equivalent after normalization: 4');
 
     const rawBeforeCss = comparison.matched
       .map((match) =>

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createTwoFilesPatch } from 'diff';
 import { format, type Options as PrettierOptions } from 'prettier';
+import { normalizeCssSelectorsByDeclarations } from './css-declaration-normalize';
 
 export interface OutputContentPair {
   beforeName: string;
@@ -11,7 +12,7 @@ export interface OutputContentPair {
 export interface CompareOutputContentsOptions {
   beforeRoot: string;
   afterRoot: string;
-  normalizeCssModuleHashes?: boolean;
+  normalizeCssSelectors?: boolean;
   diffContext?: number;
   prettierOptions?: PrettierOptions;
 }
@@ -26,7 +27,8 @@ export interface OutputContentDiff {
   parser: string | null;
   beforeFormattedBytes: number | null;
   afterFormattedBytes: number | null;
-  cssModuleHashesNormalized: number;
+  cssDeclarationBlocksMatched: number;
+  cssSelectorsNormalized: number;
   addedLines: number;
   removedLines: number;
   patch: string;
@@ -47,16 +49,6 @@ export interface RenderOutputContentSummaryOptions {
   top?: number;
 }
 
-interface NormalizedCssModuleContent {
-  content: string;
-  replacements: number;
-}
-
-const CSS_MODULE_HASH_SUFFIX =
-  /\b([A-Za-z_][A-Za-z0-9_-]*__)[A-Za-z0-9_-]{5,64}\b/g;
-const CSS_MODULE_FILENAME_SEPARATOR =
-  /(\b[A-Za-z_][A-Za-z0-9_-]*)(?:\\?\.|-)(module_[A-Za-z0-9_-]+__)/g;
-
 export async function compareOutputContents(
   pairs: OutputContentPair[],
   options: CompareOutputContentsOptions,
@@ -74,7 +66,8 @@ export async function compareOutputContents(
         parser: null,
         beforeFormattedBytes: null,
         afterFormattedBytes: null,
-        cssModuleHashesNormalized: 0,
+        cssDeclarationBlocksMatched: 0,
+        cssSelectorsNormalized: 0,
         addedLines: 0,
         removedLines: 0,
         patch: '',
@@ -96,21 +89,23 @@ export async function compareOutputContents(
           parser,
         }),
       ]);
-      const beforeNormalized =
-        (options.normalizeCssModuleHashes ?? true)
-          ? normalizeCssModuleHashes(beforeFormatted)
-          : { content: beforeFormatted, replacements: 0 };
-      const afterNormalized =
-        (options.normalizeCssModuleHashes ?? true)
-          ? normalizeCssModuleHashes(afterFormatted)
-          : { content: afterFormatted, replacements: 0 };
-      const changed = beforeNormalized.content !== afterNormalized.content;
+      const shouldNormalizeCssSelectors =
+        parser === 'css' && (options.normalizeCssSelectors ?? true);
+      const normalized = shouldNormalizeCssSelectors
+        ? normalizeCssSelectorsByDeclarations(beforeFormatted, afterFormatted)
+        : {
+            beforeContent: beforeFormatted,
+            afterContent: afterFormatted,
+            matchedDeclarationBlocks: 0,
+            normalizedSelectors: 0,
+          };
+      const changed = normalized.beforeContent !== normalized.afterContent;
       const patch = changed
         ? createTwoFilesPatch(
             `before/${pair.beforeName}`,
             `after/${pair.afterName}`,
-            beforeNormalized.content,
-            afterNormalized.content,
+            normalized.beforeContent,
+            normalized.afterContent,
             'Prettier formatted',
             'Prettier formatted',
             { context: options.diffContext ?? 3 },
@@ -124,8 +119,8 @@ export async function compareOutputContents(
         parser,
         beforeFormattedBytes: Buffer.byteLength(beforeFormatted),
         afterFormattedBytes: Buffer.byteLength(afterFormatted),
-        cssModuleHashesNormalized:
-          beforeNormalized.replacements + afterNormalized.replacements,
+        cssDeclarationBlocksMatched: normalized.matchedDeclarationBlocks,
+        cssSelectorsNormalized: normalized.normalizedSelectors,
         ...lineChanges,
         patch,
       });
@@ -136,7 +131,8 @@ export async function compareOutputContents(
         parser,
         beforeFormattedBytes: null,
         afterFormattedBytes: null,
-        cssModuleHashesNormalized: 0,
+        cssDeclarationBlocksMatched: 0,
+        cssSelectorsNormalized: 0,
         addedLines: 0,
         removedLines: 0,
         patch: '',
@@ -165,26 +161,6 @@ export async function formatOutputText(
   const parser = options.parser ?? getPrettierParser(filename);
   if (!parser) throw new Error(`No Prettier parser for output: ${filename}`);
   return format(content, { ...options, filepath: filename, parser });
-}
-
-export function normalizeCssModuleHashes(
-  content: string,
-): NormalizedCssModuleContent {
-  let replacements = 0;
-  const normalizedSeparators = content.replace(
-    CSS_MODULE_FILENAME_SEPARATOR,
-    '$1_$2',
-  );
-  return {
-    content: normalizedSeparators.replace(
-      CSS_MODULE_HASH_SUFFIX,
-      (_match, prefix: string) => {
-        replacements += 1;
-        return `${prefix}[css-module-hash]`;
-      },
-    ),
-    replacements,
-  };
 }
 
 export function renderOutputContentDiff(
@@ -219,9 +195,9 @@ export function renderOutputContentSummaryMarkdown(
 
   lines.push('');
   lines.push(
-    '| Before | After | Status | Formatted Size Diff | +Lines | -Lines | CSS Module Hashes |',
+    '| Before | After | Status | Formatted Size Diff | +Lines | -Lines | Matched Blocks | Normalized Selectors |',
   );
-  lines.push('|---|---|---|---:|---:|---:|---:|');
+  lines.push('|---|---|---|---:|---:|---:|---:|---:|');
   for (const file of comparison.files.slice(0, top)) {
     const sizeDiff =
       file.beforeFormattedBytes === null || file.afterFormattedBytes === null
@@ -233,12 +209,12 @@ export function renderOutputContentSummaryMarkdown(
       ? `${file.status}: ${escapeTableCell(file.message)}`
       : file.status;
     lines.push(
-      `| \`${file.beforeName}\` | \`${file.afterName}\` | ${status} | ${sizeDiff} | ${file.addedLines} | ${file.removedLines} | ${file.cssModuleHashesNormalized} |`,
+      `| \`${file.beforeName}\` | \`${file.afterName}\` | ${status} | ${sizeDiff} | ${file.addedLines} | ${file.removedLines} | ${file.cssDeclarationBlocksMatched} | ${file.cssSelectorsNormalized} |`,
     );
   }
   if (comparison.files.length > top) {
     lines.push(
-      `| ... | ... | ${comparison.files.length - top} more | ... | ... | ... | ... |`,
+      `| ... | ... | ${comparison.files.length - top} more | ... | ... | ... | ... | ... |`,
     );
   }
   return `${lines.join('\n')}\n`;

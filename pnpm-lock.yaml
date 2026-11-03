@@ -11,6 +11,12 @@ importers:
       diff:
         specifier: ^8.0.4
         version: 8.0.4
+      postcss:
+        specifier: ^8.5.32
+        version: 8.5.32
+      postcss-selector-parser:
+        specifier: ^7.1.7
+        version: 7.1.7
       prettier:
         specifier: ^3.9.10
         version: 3.9.10

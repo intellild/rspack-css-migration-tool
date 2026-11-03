@@ -5,6 +5,31 @@ import { rspack } from '@rspack/core';
 export const exampleRoot = path.dirname(fileURLToPath(import.meta.url));
 export const cssModuleLocalIdentName = 'cm_[name]_[local]__[hash:base64:5]';
 
+export function runRspackBuild(config) {
+  const compiler = rspack(config);
+  return new Promise((resolve, reject) => {
+    compiler.run((error, stats) => {
+      const finish = (buildError) => {
+        compiler.close((closeError) => {
+          if (buildError) reject(buildError);
+          else if (closeError) reject(closeError);
+          else resolve();
+        });
+      };
+
+      if (error) {
+        finish(error);
+      } else if (!stats || stats.hasErrors()) {
+        finish(
+          new Error(stats?.toString({ colors: false }) ?? 'Rspack failed'),
+        );
+      } else {
+        finish();
+      }
+    });
+  });
+}
+
 function commonConfig(name, outputPath, OutputGraphPlugin) {
   return {
     name,

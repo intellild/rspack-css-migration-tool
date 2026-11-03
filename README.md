@@ -61,6 +61,7 @@ node scripts/compare-output-files.mjs \
   --after path/to/builtin-css-dist \
   --extensions css \
   --diff-out report.diff \
+  --check \
   --out report.md
 ```
 
@@ -69,18 +70,23 @@ relationships automatically. Otherwise it falls back to normalized filenames.
 Use `--require-graph` in CI to prevent an accidental fallback.
 
 Before generating the unified diff, supported text assets are formatted with
-Prettier. CSS Modules hash suffixes and the filename separator difference
-between css-loader and built-in CSS are normalized after formatting. The report
-records formatted sizes and line changes; use `--no-css-module-normalize` when
-the generated identifiers themselves need to be inspected.
+Prettier. CSS declaration blocks are parsed with PostCSS and fingerprinted with
+SimHash. Rules with compatible selector structure and nearby declaration
+fingerprints are paired, then differing generated class selectors are
+normalized without guessing hash shapes from regular expressions. The report
+records matched blocks, normalized selectors, formatted sizes, and line
+changes. Use `--no-css-selector-normalize` to inspect generated identifiers.
+Use `--check` in CI to fail on added, removed, changed, skipped, or invalid
+content.
 
 ## Example and test fixture
 
 [`examples/css-migration`](./examples/css-migration) builds the same source
 once with css-loader and once with built-in CSS. It includes nested, circular,
 repeated, and lazy module relationships plus CSS Modules. The output names and
-CSS Modules hashes differ between builds, so the fixture verifies graph-based
-pairing and normalized content diffs rather than filename equality.
+generated CSS Module selectors differ between builds, so the fixture verifies
+graph-based pairing and declaration-based content comparison rather than
+filename equality.
 
 ```bash
 pnpm run example

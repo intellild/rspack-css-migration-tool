@@ -15,8 +15,9 @@ Options:
   --min-score 0.35       Minimum graph matching confidence
   --diff-out report.diff Write a unified diff of Prettier-formatted contents
   --no-content-diff      Skip content formatting and unified diff generation
-  --no-css-module-normalize
-                         Keep generated CSS Modules hashes in content diffs
+  --no-css-selector-normalize
+                         Keep generated CSS selectors in content diffs
+  --check                Fail if assets or normalized contents differ
   --top 50               Maximum detailed rows per section
   --out report.md        Write the report instead of printing it
 
@@ -51,6 +52,10 @@ function parseArgs(args) {
     );
     process.exit(2);
   }
+  if (args.includes('--check') && args.includes('--no-content-diff')) {
+    console.error('--check cannot be combined with --no-content-diff.');
+    process.exit(2);
+  }
 
   return {
     before,
@@ -65,7 +70,8 @@ function parseArgs(args) {
     graph: !args.includes('--no-graph'),
     requireGraph: args.includes('--require-graph'),
     contentDiff: !args.includes('--no-content-diff'),
-    normalizeCssModuleHashes: !args.includes('--no-css-module-normalize'),
+    normalizeCssSelectors: !args.includes('--no-css-selector-normalize'),
+    check: args.includes('--check'),
     extensions: extensions
       ? extensions.split(',').map((item) => item.trim())
       : undefined,
@@ -92,6 +98,7 @@ const hasAfterGraph = existsSync(afterGraph);
 
 let markdown;
 let contentComparison;
+const checkFailures = [];
 if (options.graph && hasBeforeGraph && hasAfterGraph) {
   const before = tool.loadOutputGraph(beforeGraph);
   const after = tool.loadOutputGraph(afterGraph);
@@ -99,19 +106,13 @@ if (options.graph && hasBeforeGraph && hasAfterGraph) {
     extensions: options.extensions,
     minScore: options.minScore,
   });
-  if (options.contentDiff) {
-    contentComparison = await tool.compareOutputContents(
-      comparison.matched.map((match) => ({
-        beforeName: match.before.name,
-        afterName: match.after.name,
-      })),
-      {
-        beforeRoot: options.before,
-        afterRoot: options.after,
-        normalizeCssModuleHashes: options.normalizeCssModuleHashes,
-      },
-    );
-  }
+  contentComparison = await compareMatchedContents(
+    comparison.matched.map((match) => ({
+      beforeName: match.before.name,
+      afterName: match.after.name,
+    })),
+  );
+  collectCheckFailures(comparison, contentComparison);
   markdown = tool.renderOutputGraphDiffMarkdown(comparison, {
     top: options.top,
     contentComparison,
@@ -145,19 +146,13 @@ if (options.graph && hasBeforeGraph && hasAfterGraph) {
     ignore: [ignoredGraph],
   });
   const comparison = tool.compareOutputFileManifests(before, after);
-  if (options.contentDiff) {
-    contentComparison = await tool.compareOutputContents(
-      comparison.matched.map((match) => ({
-        beforeName: match.before.path,
-        afterName: match.after.path,
-      })),
-      {
-        beforeRoot: options.before,
-        afterRoot: options.after,
-        normalizeCssModuleHashes: options.normalizeCssModuleHashes,
-      },
-    );
-  }
+  contentComparison = await compareMatchedContents(
+    comparison.matched.map((match) => ({
+      beforeName: match.before.path,
+      afterName: match.after.path,
+    })),
+  );
+  collectCheckFailures(comparison, contentComparison);
   markdown = tool.renderOutputFileDiffMarkdown(comparison, {
     top: options.top,
     contentComparison,
@@ -191,10 +186,44 @@ if (options.out) {
   console.log(markdown);
 }
 
+if (options.check && checkFailures.length) {
+  console.error(`Output check failed: ${checkFailures.join(', ')}`);
+  process.exitCode = 1;
+}
+
 function getContentDiffOutput(options) {
   if (!options.contentDiff) return null;
   if (options.diffOut) return options.diffOut;
   if (!options.out) return null;
   const parsed = path.parse(options.out);
   return path.join(parsed.dir, `${parsed.name}.diff`);
+}
+
+async function compareMatchedContents(pairs) {
+  if (!options.contentDiff) return undefined;
+  return tool.compareOutputContents(pairs, {
+    beforeRoot: options.before,
+    afterRoot: options.after,
+    normalizeCssSelectors: options.normalizeCssSelectors,
+  });
+}
+
+function collectCheckFailures(comparison, contents) {
+  if (!options.check) return;
+  if (comparison.added.length) {
+    checkFailures.push(`${comparison.added.length} added assets`);
+  }
+  if (comparison.removed.length) {
+    checkFailures.push(`${comparison.removed.length} removed assets`);
+  }
+  if (!contents) return;
+  if (contents.changed) {
+    checkFailures.push(`${contents.changed} changed contents`);
+  }
+  if (contents.skipped) {
+    checkFailures.push(`${contents.skipped} skipped contents`);
+  }
+  if (contents.errors) {
+    checkFailures.push(`${contents.errors} content errors`);
+  }
 }
