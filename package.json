@@ -14,7 +14,8 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "scripts/compare-output-files.mjs"
+    "scripts/compare-output-files.mjs",
+    "skills"
   ],
   "scripts": {
     "build": "rslib",

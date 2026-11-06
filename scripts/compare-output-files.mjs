@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const usage = `Usage:
@@ -164,7 +164,7 @@ const contentDiffOutput = getContentDiffOutput(options);
 if (contentComparison) {
   const contentDiff = tool.renderOutputContentDiff(contentComparison);
   if (contentDiffOutput) {
-    writeFileSync(contentDiffOutput, contentDiff);
+    writeOutputFile(contentDiffOutput, contentDiff);
   } else {
     markdown += `\n## Unified Content Diff\n\n\`\`\`diff\n${contentDiff}\`\`\`\n`;
   }
@@ -177,7 +177,7 @@ markdown = await tool.formatOutputText(
 );
 
 if (options.out) {
-  writeFileSync(options.out, markdown);
+  writeOutputFile(options.out, markdown);
   console.log(`Report saved to: ${options.out}`);
   if (contentDiffOutput) {
     console.log(`Content diff saved to: ${contentDiffOutput}`);
@@ -197,6 +197,12 @@ function getContentDiffOutput(options) {
   if (!options.out) return null;
   const parsed = path.parse(options.out);
   return path.join(parsed.dir, `${parsed.name}.diff`);
+}
+
+function writeOutputFile(outputPath, content) {
+  const absolutePath = path.resolve(outputPath);
+  mkdirSync(path.dirname(absolutePath), { recursive: true });
+  writeFileSync(absolutePath, content);
 }
 
 async function compareMatchedContents(pairs) {
