@@ -76,3 +76,9 @@ export {
   type OutputContentPair,
   type RenderOutputContentSummaryOptions,
 } from './output-content-compare';
+
+export {
+  pluginBuiltinCss,
+  type BuiltinCssModulesOptions,
+  type PluginBuiltinCssOptions,
+} from './rsbuild-plugin';

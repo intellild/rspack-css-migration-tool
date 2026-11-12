@@ -6,6 +6,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./css-url-loader": {
+      "types": "./dist/css-url-loader.d.ts",
+      "default": "./dist/css-url-loader.js"
     }
   },
   "bin": {
@@ -20,7 +24,9 @@
   "scripts": {
     "build": "rslib",
     "dev": "rslib --watch",
-    "example": "pnpm run build && node examples/css-migration/build.mjs && node scripts/compare-output-files.mjs --before examples/css-migration/dist/css-loader --after examples/css-migration/dist/builtin-css --extensions css --require-graph --check --out examples/css-migration/dist/report.md",
+    "example": "pnpm run example:rspack && pnpm run example:rsbuild",
+    "example:rspack": "pnpm run build && node examples/rspack/build.mjs all && node scripts/compare-output-files.mjs --before examples/rspack/dist/css-loader --after examples/rspack/dist/builtin-css --extensions css --require-graph --check --out examples/rspack/dist/report.md",
+    "example:rsbuild": "pnpm run build && node examples/rsbuild/build.mjs all && node scripts/compare-output-files.mjs --before examples/rsbuild/dist/css-loader --after examples/rsbuild/dist/builtin-css --extensions css --require-graph --check --out examples/rsbuild/dist/report.md",
     "format": "prettier --write .",
     "lint": "rslint",
     "test": "rstest",
@@ -33,6 +39,7 @@
     "prettier": "^3.9.10"
   },
   "devDependencies": {
+    "@rsbuild/core": "^2.3.0",
     "@rslib/core": "^1.0.5",
     "@rslint/core": "^0.9.5",
     "@rspack/core": "^2.3.0",
@@ -41,6 +48,14 @@
     "@types/node": "^24.19.2",
     "css-loader": "^7.1.5",
     "typescript": "^7.0.2"
+  },
+  "peerDependencies": {
+    "@rsbuild/core": "^2.3.0"
+  },
+  "peerDependenciesMeta": {
+    "@rsbuild/core": {
+      "optional": true
+    }
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"

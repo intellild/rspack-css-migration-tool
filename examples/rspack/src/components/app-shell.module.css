@@ -1,0 +1,10 @@
+.shell {
+  max-width: 48rem;
+  margin: 2rem auto;
+  padding: 1.5rem;
+}
+
+.title {
+  color: var(--accent-color);
+  letter-spacing: -0.025em;
+}

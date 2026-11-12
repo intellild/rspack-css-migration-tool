@@ -1,0 +1,4 @@
+.details {
+  padding: 0.75rem;
+  border-left: 0.25rem solid var(--accent-color);
+}

@@ -12,9 +12,9 @@ import {
   RspackOutputGraphPlugin,
 } from '../src/index';
 import {
-  createMigrationConfigs,
+  createRspackConfig,
   runRspackBuild,
-} from '../examples/css-migration/config.mjs';
+} from '../examples/rspack/rspack.config.mjs';
 
 test('the example migrates from css-loader and still matches both CSS outputs', async () => {
   const outputRoot = mkdtempSync(
@@ -22,7 +22,13 @@ test('the example migrates from css-loader and still matches both CSS outputs', 
   );
 
   try {
-    const configs = createMigrationConfigs(outputRoot, RspackOutputGraphPlugin);
+    const configs = [false, true].map((builtinCss) =>
+      createRspackConfig({
+        builtinCss,
+        outputRoot,
+        OutputGraphPlugin: RspackOutputGraphPlugin,
+      }),
+    );
     for (const config of configs) await runRspackBuild(config);
 
     const beforeGraphPath = path.join(
