@@ -38,6 +38,50 @@ function graph(name: string, assets: OutputGraphAsset[]): OutputGraph {
 }
 
 describe('createOutputGraph', () => {
+  test('normalizes deep module paths and nested node_modules prefixes', () => {
+    const resource = `${'directory/'.repeat(40)}index.js`;
+    const dependency =
+      '/cache/node_modules/.pnpm/pkg/node_modules/pkg/index.js';
+    const localPnpmDependency =
+      '/project/node_modules/.pnpm/pkg/node_modules/pkg/index.js';
+    const workspaceDependency =
+      '/project/packages/app/node_modules/foo/index.js';
+    const output = createOutputGraph(
+      {
+        chunks: [{ id: 1, files: ['main.js'] }],
+        chunkGraph: {
+          getChunkModulesIterable: () => [
+            {
+              resource: `/project/${resource}`,
+              identifier: () => `/project/${resource}`,
+            },
+            { resource: dependency, identifier: () => dependency },
+            {
+              resource: localPnpmDependency,
+              identifier: () => localPnpmDependency,
+            },
+            {
+              resource: workspaceDependency,
+              identifier: () => workspaceDependency,
+            },
+          ],
+        },
+      },
+      { context: '/project' },
+    );
+    expect(output.chunks[0]?.moduleIdentifiers).toEqual([
+      resource,
+      'node_modules/foo/index.js',
+      'node_modules/pkg/index.js',
+    ]);
+    expect(output.chunks[0]?.moduleResources).toEqual([
+      resource,
+      'node_modules/.pnpm/pkg/node_modules/pkg/index.js',
+      'node_modules/pkg/index.js',
+      'packages/app/node_modules/foo/index.js',
+    ]);
+  });
+
   test('reads chunkGraph modules and moduleGraph issuers', () => {
     const chunk = {
       id: 1,

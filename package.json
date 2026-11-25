@@ -6,10 +6,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    },
-    "./css-url-loader": {
-      "types": "./dist/css-url-loader.d.ts",
-      "default": "./dist/css-url-loader.js"
     }
   },
   "bin": {

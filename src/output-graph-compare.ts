@@ -1,10 +1,13 @@
 import { readFileSync } from 'node:fs';
-import { bytesToHuman, signedBytes, type AssetKind } from './normalize';
 import {
-  renderOutputContentSummaryMarkdown,
-  type OutputContentComparison,
-} from './output-content-compare';
+  normalizeExtensionFilter,
+  signedBytes,
+  summarizeAssetsByKind,
+  type AssetKindSummary,
+} from './normalize';
+import type { OutputContentComparison } from './output-content-compare';
 import type { OutputGraph, OutputGraphAsset } from './output-graph-plugin';
+import { renderComparisonReportMarkdown } from './report-markdown';
 
 export interface OutputGraphComparisonOptions {
   minScore?: number;
@@ -31,15 +34,7 @@ export interface MatchedOutputGraphAsset {
   reasons: string[];
 }
 
-export interface OutputGraphSummary {
-  kind: AssetKind;
-  beforeCount: number;
-  afterCount: number;
-  beforeBytes: number;
-  afterBytes: number;
-  countDiff: number;
-  bytesDiff: number;
-}
+export type OutputGraphSummary = AssetKindSummary;
 
 interface ScoredPair {
   score: number;
@@ -77,7 +72,7 @@ export function compareOutputGraphs(
     matched,
     added: afterAssets.filter((asset) => !usedAfter.has(asset)),
     removed: beforeAssets.filter((asset) => !usedBefore.has(asset)),
-    summary: summarizeOutputGraphAssets(beforeAssets, afterAssets),
+    summary: summarizeAssetsByKind(beforeAssets, afterAssets),
   };
 }
 
@@ -127,15 +122,6 @@ function matchAssets(
 
   return matches.sort((left, right) =>
     left.before.name.localeCompare(right.before.name),
-  );
-}
-
-function normalizeExtensionFilter(extensions?: string[]): Set<string> | null {
-  if (!extensions?.length) return null;
-  return new Set(
-    extensions.map((extension) =>
-      extension.startsWith('.') ? extension.toLowerCase() : `.${extension}`,
-    ),
   );
 }
 
@@ -347,33 +333,6 @@ function toPercent(value: number): string {
   return `${(value * 100).toFixed(0)}%`;
 }
 
-function summarizeOutputGraphAssets(
-  beforeAssets: OutputGraphAsset[],
-  afterAssets: OutputGraphAsset[],
-): OutputGraphSummary[] {
-  const kinds = new Set<AssetKind>([
-    ...beforeAssets.map((asset) => asset.kind),
-    ...afterAssets.map((asset) => asset.kind),
-  ]);
-
-  return [...kinds].sort().map((kind) => {
-    const before = beforeAssets.filter((asset) => asset.kind === kind);
-    const after = afterAssets.filter((asset) => asset.kind === kind);
-    const beforeBytes = before.reduce((sum, asset) => sum + asset.bytes, 0);
-    const afterBytes = after.reduce((sum, asset) => sum + asset.bytes, 0);
-
-    return {
-      kind,
-      beforeCount: before.length,
-      afterCount: after.length,
-      beforeBytes,
-      afterBytes,
-      countDiff: after.length - before.length,
-      bytesDiff: afterBytes - beforeBytes,
-    };
-  });
-}
-
 export function renderOutputGraphDiffMarkdown(
   comparison: OutputGraphComparison,
   options: OutputGraphComparisonOptions = {},
@@ -387,66 +346,39 @@ export function renderOutputGraphDiffMarkdown(
     .sort(
       (left, right) => Math.abs(right.bytesDiff) - Math.abs(left.bytesDiff),
     );
-  const lines = [
-    '# Rspack Output Graph Diff Report',
-    '',
-    `- Before: \`${comparison.beforeName}\``,
-    `- After: \`${comparison.afterName}\``,
-    `- Matched: ${comparison.matched.length}`,
-    `- Added: ${comparison.added.length}`,
-    `- Removed: ${comparison.removed.length}`,
-    '',
-    '## Summary',
-    '',
-    '| Kind | Before | After | Count Diff | Size Diff |',
-    '|---|---:|---:|---:|---:|',
-  ];
 
-  for (const row of comparison.summary) {
-    lines.push(
-      `| ${row.kind} | ${row.beforeCount} / ${bytesToHuman(row.beforeBytes)} | ${row.afterCount} / ${bytesToHuman(row.afterBytes)} | ${row.countDiff >= 0 ? '+' : ''}${row.countDiff} | ${signedBytes(row.bytesDiff)} |`,
-    );
-  }
-
-  lines.push('', `## Matched Asset Changes (${changed.length})`, '');
-  lines.push('| Before | After | Size Diff | Score | Reasons |');
-  lines.push('|---|---|---:|---:|---|');
-  for (const match of changed.slice(0, top)) {
-    lines.push(
-      `| \`${match.before.name}\` | \`${match.after.name}\` | ${signedBytes(match.bytesDiff)} | ${match.score.toFixed(2)} | ${match.reasons.join(', ')} |`,
-    );
-  }
-  if (changed.length > top) {
-    lines.push(`| ... | ... | ... | ... | ${changed.length - top} more |`);
-  }
-
-  lines.push('', `## Added Assets (${comparison.added.length})`, '');
-  for (const asset of comparison.added.slice(0, top)) {
-    lines.push(`- \`${asset.name}\` (${bytesToHuman(asset.bytes)})`);
-  }
-  if (comparison.added.length > top) {
-    lines.push(`- ... ${comparison.added.length - top} more`);
-  }
-
-  lines.push('', `## Removed Assets (${comparison.removed.length})`, '');
-  for (const asset of comparison.removed.slice(0, top)) {
-    lines.push(`- \`${asset.name}\` (${bytesToHuman(asset.bytes)})`);
-  }
-  if (comparison.removed.length > top) {
-    lines.push(`- ... ${comparison.removed.length - top} more`);
-  }
-
-  if (options.contentComparison) {
-    lines.push(
-      '',
-      ...renderOutputContentSummaryMarkdown(options.contentComparison, {
-        diffFilename: options.contentDiffFilename,
-        top,
-      })
-        .trimEnd()
-        .split('\n'),
-    );
-  }
-
-  return `${lines.join('\n')}\n`;
+  return renderComparisonReportMarkdown({
+    title: 'Rspack Output Graph Diff Report',
+    beforeLabel: comparison.beforeName,
+    afterLabel: comparison.afterName,
+    matchedCount: comparison.matched.length,
+    added: comparison.added.map((asset) => ({
+      label: asset.name,
+      bytes: asset.bytes,
+    })),
+    removed: comparison.removed.map((asset) => ({
+      label: asset.name,
+      bytes: asset.bytes,
+    })),
+    summary: comparison.summary,
+    changedSection: {
+      title: 'Matched Asset Changes',
+      headers: ['Before', 'After', 'Size Diff', 'Score', 'Reasons'],
+      alignments: ['---', '---', '---:', '---:', '---'],
+      totalCount: changed.length,
+      rows: changed
+        .slice(0, top)
+        .map((match) => [
+          `\`${match.before.name}\``,
+          `\`${match.after.name}\``,
+          signedBytes(match.bytesDiff),
+          match.score.toFixed(2),
+          match.reasons.join(', '),
+        ]),
+    },
+    itemNoun: 'Assets',
+    top,
+    contentComparison: options.contentComparison,
+    contentDiffFilename: options.contentDiffFilename,
+  });
 }

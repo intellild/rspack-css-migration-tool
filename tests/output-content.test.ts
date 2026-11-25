@@ -5,6 +5,8 @@ import { describe, expect, test } from '@rstest/core';
 import {
   compareOutputContents,
   normalizeCssSelectorsByDeclarations,
+  normalizeCssUrlQuotes,
+  normalizeCssUrlQuotesWithCount,
   renderOutputContentDiff,
 } from '../src/index';
 
@@ -107,5 +109,66 @@ describe('output content comparison', () => {
     });
     expect(normalized.beforeContent).toContain('.before');
     expect(normalized.afterContent).toContain('.after');
+  });
+
+  test('canonicalizes url() quoting', () => {
+    const value = 'a{background:url(data:font/woff2;base64,AAAA)}';
+
+    expect(normalizeCssUrlQuotes(value)).toBe(
+      'a{background:url("data:font/woff2;base64,AAAA")}',
+    );
+    expect(normalizeCssUrlQuotesWithCount(value)).toEqual({
+      content: 'a{background:url("data:font/woff2;base64,AAAA")}',
+      normalized: 1,
+    });
+    expect(
+      normalizeCssUrlQuotes('a{background:url("data:font/woff2;base64,AAAA")}'),
+    ).toBe('a{background:url("data:font/woff2;base64,AAAA")}');
+  });
+
+  test('leaves url() payloads that need escaping untouched', () => {
+    const value =
+      'a{background:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\'/%3E")}';
+
+    expect(normalizeCssUrlQuotesWithCount(value)).toEqual({
+      content: value,
+      normalized: 0,
+    });
+  });
+
+  test('treats url() quote differences as equivalent by default', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'output-content-'));
+    const beforeRoot = path.join(root, 'before');
+    const afterRoot = path.join(root, 'after');
+    mkdirSync(beforeRoot);
+    mkdirSync(afterRoot);
+
+    try {
+      writeFileSync(
+        path.join(beforeRoot, 'font.css'),
+        '@font-face{font-family:x;src:url(data:font/woff2;base64,AAAA) format("woff2")}',
+      );
+      writeFileSync(
+        path.join(afterRoot, 'font.css'),
+        '@font-face{font-family:x;src:url("data:font/woff2;base64,AAAA") format("woff2")}',
+      );
+
+      const comparison = await compareOutputContents(
+        [{ beforeName: 'font.css', afterName: 'font.css' }],
+        { beforeRoot, afterRoot },
+      );
+
+      expect(comparison).toMatchObject({ equivalent: 1, changed: 0 });
+      expect(comparison.files[0]?.cssUrlQuotesNormalized).toBe(1);
+
+      const raw = await compareOutputContents(
+        [{ beforeName: 'font.css', afterName: 'font.css' }],
+        { beforeRoot, afterRoot, normalizeCssUrlQuotes: false },
+      );
+      expect(raw).toMatchObject({ equivalent: 0, changed: 1 });
+      expect(renderOutputContentDiff(raw)).toContain('url(data:font/woff2');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

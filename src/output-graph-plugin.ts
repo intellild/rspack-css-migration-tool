@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import {
   getAssetExtension,
   getAssetKind,
   normalizeAssetName,
+  normalizeSlashes,
   type AssetKind,
   type NormalizeAssetNameOptions,
 } from './normalize';
@@ -498,21 +500,32 @@ function extractResourceFromIdentifier(identifier: string): string {
   return withoutLoaders;
 }
 
+function getContextPrefixes(context?: string): string[] {
+  if (!context) return [];
+  const resolved = normalizeSlashes(path.resolve(context)).replace(/\/$/, '');
+  const prefixes = [resolved];
+  try {
+    const real = normalizeSlashes(realpathSync(context)).replace(/\/$/, '');
+    if (real && real !== resolved) {
+      prefixes.push(real);
+    }
+  } catch {
+    // Ignore nonexistent or virtual context paths (for example in unit tests).
+  }
+  return prefixes.sort((left, right) => right.length - left.length);
+}
+
 function normalizeModuleIdentifier(
   identifier: string,
   context?: string,
 ): string {
   let normalized = normalizeSlashes(identifier).replaceAll('\0', '');
-  if (context) {
-    const normalizedContext = normalizeSlashes(path.resolve(context)).replace(
-      /\/$/,
-      '',
-    );
+  for (const normalizedContext of getContextPrefixes(context)) {
     normalized = normalized.split(`${normalizedContext}/`).join('');
   }
   normalized = normalized.replace(
-    /(?:[A-Za-z]:)?\/(?:[^!|]+\/)*node_modules\//g,
-    'node_modules/',
+    /(^|[!|])(?:(?:[A-Za-z]:)?\/)?(?:[^!|/]+\/)*node_modules\//g,
+    '$1node_modules/',
   );
   return normalized;
 }
@@ -523,11 +536,7 @@ function normalizeModuleResource(resource: string, context?: string): string {
   normalized = normalized.replace(/^file:\/\//, '');
   normalized = normalized.replace(/[?#].*$/, '');
 
-  if (context) {
-    const normalizedContext = normalizeSlashes(path.resolve(context)).replace(
-      /\/$/,
-      '',
-    );
+  for (const normalizedContext of getContextPrefixes(context)) {
     if (normalized === normalizedContext) return '.';
     if (normalized.startsWith(`${normalizedContext}/`)) {
       return normalized.slice(normalizedContext.length + 1);
@@ -629,10 +638,6 @@ function hashValues(values: string[]): string {
     .update(values.join('\0'))
     .digest('hex')
     .slice(0, 12);
-}
-
-function normalizeSlashes(value: string): string {
-  return value.replace(/\\/g, '/');
 }
 
 function toIterable<T>(value: Iterable<T> | undefined | null): Iterable<T> {

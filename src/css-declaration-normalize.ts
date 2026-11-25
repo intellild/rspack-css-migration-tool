@@ -14,7 +14,7 @@ export interface NormalizedCssContentPair {
 }
 
 interface SelectorInfo {
-  classNames: string[];
+  classCount: number;
   shape: string;
 }
 
@@ -92,7 +92,7 @@ function collectDeclarationBlocks(root: Root): DeclarationBlock[] {
     const declarationNodes = rule.nodes.filter((node) => node.type === 'decl');
     const declarations = declarationNodes.map((declaration) => {
       const property = declaration.prop.trim().toLowerCase();
-      const value = normalizeDeclarationValue(declaration.value);
+      const value = declaration.value.trim();
       return `${property}:${value}${declaration.important ? '!important' : ''}`;
     });
     if (!declarations.length) return;
@@ -122,15 +122,15 @@ function collectDeclarationBlocks(root: Root): DeclarationBlock[] {
 function parseSelector(selector: string): SelectorInfo | null {
   try {
     const ast = selectorParser().astSync(selector);
-    const classNames: string[] = [];
+    let classCount = 0;
     ast.walkClasses((classNode) => {
-      classNames.push(classNode.value);
+      classCount += 1;
       classNode.setPropertyWithoutEscape(
         'value',
-        `rspack-css-class-${classNames.length}`,
+        `rspack-css-class-${classCount}`,
       );
     });
-    return { classNames, shape: ast.toString() };
+    return { classCount, shape: ast.toString() };
   } catch {
     return null;
   }
@@ -158,10 +158,6 @@ function getRuleContext(rule: Rule): string {
 function formatAtRuleContext(atRule: AtRule): string {
   const params = atRule.params.trim();
   return `@${atRule.name.toLowerCase()}${params ? ` ${params}` : ''}`;
-}
-
-function normalizeDeclarationValue(value: string): string {
-  return value.trim();
 }
 
 function createSimHash(declarations: string[]): bigint {
@@ -299,11 +295,9 @@ function matchDeclarationBlocks(
 }
 
 function getSelectorStructureKey(block: DeclarationBlock): string {
-  return [
-    block.context,
-    block.selector.shape,
-    block.selector.classNames.length,
-  ].join('\0');
+  return [block.context, block.selector.shape, block.selector.classCount].join(
+    '\0',
+  );
 }
 
 function createFingerprintTreeNode(

@@ -17,6 +17,8 @@ Options:
   --no-content-diff      Skip content formatting and unified diff generation
   --no-css-selector-normalize
                          Keep generated CSS selectors in content diffs
+  --no-css-url-quote-normalize
+                         Keep original url() quoting in content diffs
   --check                Fail if assets or normalized contents differ
   --top 50               Maximum detailed rows per section
   --out report.md        Write the report instead of printing it
@@ -71,6 +73,7 @@ function parseArgs(args) {
     requireGraph: args.includes('--require-graph'),
     contentDiff: !args.includes('--no-content-diff'),
     normalizeCssSelectors: !args.includes('--no-css-selector-normalize'),
+    normalizeCssUrlQuotes: !args.includes('--no-css-url-quote-normalize'),
     check: args.includes('--check'),
     extensions: extensions
       ? extensions.split(',').map((item) => item.trim())
@@ -96,28 +99,27 @@ const afterGraph = options.afterGraph ?? path.join(options.after, defaultGraph);
 const hasBeforeGraph = existsSync(beforeGraph);
 const hasAfterGraph = existsSync(afterGraph);
 
-let markdown;
-let contentComparison;
-const checkFailures = [];
+const contentDiffOutput = getContentDiffOutput(options);
+let comparison;
+let pairs;
+let renderMarkdown;
 if (options.graph && hasBeforeGraph && hasAfterGraph) {
   const before = tool.loadOutputGraph(beforeGraph);
   const after = tool.loadOutputGraph(afterGraph);
-  const comparison = tool.compareOutputGraphs(before, after, {
+  comparison = tool.compareOutputGraphs(before, after, {
     extensions: options.extensions,
     minScore: options.minScore,
   });
-  contentComparison = await compareMatchedContents(
-    comparison.matched.map((match) => ({
-      beforeName: match.before.name,
-      afterName: match.after.name,
-    })),
-  );
-  collectCheckFailures(comparison, contentComparison);
-  markdown = tool.renderOutputGraphDiffMarkdown(comparison, {
-    top: options.top,
-    contentComparison,
-    contentDiffFilename: getContentDiffOutput(options),
-  });
+  pairs = comparison.matched.map((match) => ({
+    beforeName: match.before.name,
+    afterName: match.after.name,
+  }));
+  renderMarkdown = (contents) =>
+    tool.renderOutputGraphDiffMarkdown(comparison, {
+      top: options.top,
+      contentComparison: contents,
+      contentDiffFilename: contentDiffOutput,
+    });
   console.error(`Compared output graphs: ${beforeGraph} -> ${afterGraph}`);
 } else {
   if (options.requireGraph) {
@@ -145,22 +147,23 @@ if (options.graph && hasBeforeGraph && hasAfterGraph) {
     hashContent: options.hashContent,
     ignore: [ignoredGraph],
   });
-  const comparison = tool.compareOutputFileManifests(before, after);
-  contentComparison = await compareMatchedContents(
-    comparison.matched.map((match) => ({
-      beforeName: match.before.path,
-      afterName: match.after.path,
-    })),
-  );
-  collectCheckFailures(comparison, contentComparison);
-  markdown = tool.renderOutputFileDiffMarkdown(comparison, {
-    top: options.top,
-    contentComparison,
-    contentDiffFilename: getContentDiffOutput(options),
-  });
+  comparison = tool.compareOutputFileManifests(before, after);
+  pairs = comparison.matched.map((match) => ({
+    beforeName: match.before.path,
+    afterName: match.after.path,
+  }));
+  renderMarkdown = (contents) =>
+    tool.renderOutputFileDiffMarkdown(comparison, {
+      top: options.top,
+      contentComparison: contents,
+      contentDiffFilename: contentDiffOutput,
+    });
 }
 
-const contentDiffOutput = getContentDiffOutput(options);
+const checkFailures = [];
+const contentComparison = await compareMatchedContents(pairs);
+collectCheckFailures(comparison, contentComparison);
+let markdown = renderMarkdown(contentComparison);
 if (contentComparison) {
   const contentDiff = tool.renderOutputContentDiff(contentComparison);
   if (contentDiffOutput) {
@@ -211,6 +214,7 @@ async function compareMatchedContents(pairs) {
     beforeRoot: options.before,
     afterRoot: options.after,
     normalizeCssSelectors: options.normalizeCssSelectors,
+    normalizeCssUrlQuotes: options.normalizeCssUrlQuotes,
   });
 }
 

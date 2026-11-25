@@ -3,6 +3,8 @@ import path from 'node:path';
 import { createTwoFilesPatch } from 'diff';
 import { format, type Options as PrettierOptions } from 'prettier';
 import { normalizeCssSelectorsByDeclarations } from './css-declaration-normalize';
+import { signedBytes } from './normalize';
+import { normalizeCssUrlQuotesWithCount } from './css-url-normalize';
 
 export interface OutputContentPair {
   beforeName: string;
@@ -13,6 +15,7 @@ export interface CompareOutputContentsOptions {
   beforeRoot: string;
   afterRoot: string;
   normalizeCssSelectors?: boolean;
+  normalizeCssUrlQuotes?: boolean;
   diffContext?: number;
   prettierOptions?: PrettierOptions;
 }
@@ -29,6 +32,7 @@ export interface OutputContentDiff {
   afterFormattedBytes: number | null;
   cssDeclarationBlocksMatched: number;
   cssSelectorsNormalized: number;
+  cssUrlQuotesNormalized: number;
   addedLines: number;
   removedLines: number;
   patch: string;
@@ -68,6 +72,7 @@ export async function compareOutputContents(
         afterFormattedBytes: null,
         cssDeclarationBlocksMatched: 0,
         cssSelectorsNormalized: 0,
+        cssUrlQuotesNormalized: 0,
         addedLines: 0,
         removedLines: 0,
         patch: '',
@@ -89,13 +94,26 @@ export async function compareOutputContents(
           parser,
         }),
       ]);
+      const shouldNormalizeCssUrlQuotes =
+        parser === 'css' && (options.normalizeCssUrlQuotes ?? true);
+      const beforeUrlNormalized = shouldNormalizeCssUrlQuotes
+        ? normalizeCssUrlQuotesWithCount(beforeFormatted)
+        : { content: beforeFormatted, normalized: 0 };
+      const afterUrlNormalized = shouldNormalizeCssUrlQuotes
+        ? normalizeCssUrlQuotesWithCount(afterFormatted)
+        : { content: afterFormatted, normalized: 0 };
+      const cssUrlQuotesNormalized =
+        beforeUrlNormalized.normalized + afterUrlNormalized.normalized;
       const shouldNormalizeCssSelectors =
         parser === 'css' && (options.normalizeCssSelectors ?? true);
       const normalized = shouldNormalizeCssSelectors
-        ? normalizeCssSelectorsByDeclarations(beforeFormatted, afterFormatted)
+        ? normalizeCssSelectorsByDeclarations(
+            beforeUrlNormalized.content,
+            afterUrlNormalized.content,
+          )
         : {
-            beforeContent: beforeFormatted,
-            afterContent: afterFormatted,
+            beforeContent: beforeUrlNormalized.content,
+            afterContent: afterUrlNormalized.content,
             matchedDeclarationBlocks: 0,
             normalizedSelectors: 0,
           };
@@ -121,6 +139,7 @@ export async function compareOutputContents(
         afterFormattedBytes: Buffer.byteLength(afterFormatted),
         cssDeclarationBlocksMatched: normalized.matchedDeclarationBlocks,
         cssSelectorsNormalized: normalized.normalizedSelectors,
+        cssUrlQuotesNormalized,
         ...lineChanges,
         patch,
       });
@@ -133,6 +152,7 @@ export async function compareOutputContents(
         afterFormattedBytes: null,
         cssDeclarationBlocksMatched: 0,
         cssSelectorsNormalized: 0,
+        cssUrlQuotesNormalized: 0,
         addedLines: 0,
         removedLines: 0,
         patch: '',
@@ -189,32 +209,37 @@ export function renderOutputContentSummaryMarkdown(
     `- Skipped: ${comparison.skipped}`,
     `- Format errors: ${comparison.errors}`,
   ];
+  const urlQuotesNormalized = comparison.files.reduce(
+    (total, file) => total + file.cssUrlQuotesNormalized,
+    0,
+  );
+  if (urlQuotesNormalized) {
+    lines.push(`- CSS \`url()\` quotes normalized: ${urlQuotesNormalized}`);
+  }
   if (options.diffFilename) {
     lines.push(`- Unified diff: \`${options.diffFilename}\``);
   }
 
   lines.push('');
   lines.push(
-    '| Before | After | Status | Formatted Size Diff | +Lines | -Lines | Matched Blocks | Normalized Selectors |',
+    '| Before | After | Status | Formatted Size Diff | +Lines | -Lines | Matched Blocks | Normalized Selectors | URL Quotes |',
   );
-  lines.push('|---|---|---|---:|---:|---:|---:|---:|');
+  lines.push('|---|---|---|---:|---:|---:|---:|---:|---:|');
   for (const file of comparison.files.slice(0, top)) {
     const sizeDiff =
       file.beforeFormattedBytes === null || file.afterFormattedBytes === null
         ? 'n/a'
-        : formatSignedBytes(
-            file.afterFormattedBytes - file.beforeFormattedBytes,
-          );
+        : signedBytes(file.afterFormattedBytes - file.beforeFormattedBytes);
     const status = file.message
       ? `${file.status}: ${escapeTableCell(file.message)}`
       : file.status;
     lines.push(
-      `| \`${file.beforeName}\` | \`${file.afterName}\` | ${status} | ${sizeDiff} | ${file.addedLines} | ${file.removedLines} | ${file.cssDeclarationBlocksMatched} | ${file.cssSelectorsNormalized} |`,
+      `| \`${file.beforeName}\` | \`${file.afterName}\` | ${status} | ${sizeDiff} | ${file.addedLines} | ${file.removedLines} | ${file.cssDeclarationBlocksMatched} | ${file.cssSelectorsNormalized} | ${file.cssUrlQuotesNormalized} |`,
     );
   }
   if (comparison.files.length > top) {
     lines.push(
-      `| ... | ... | ${comparison.files.length - top} more | ... | ... | ... | ... | ... |`,
+      `| ... | ... | ${comparison.files.length - top} more | ... | ... | ... | ... | ... | ... |`,
     );
   }
   return `${lines.join('\n')}\n`;
@@ -230,12 +255,7 @@ function getPrettierParser(filename: string): string | null {
   ) {
     return 'babel';
   }
-  if (
-    lower.endsWith('.json') ||
-    lower.endsWith('.map') ||
-    lower.endsWith('.css.map') ||
-    lower.endsWith('.js.map')
-  ) {
+  if (lower.endsWith('.json') || lower.endsWith('.map')) {
     return 'json';
   }
   if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'html';
@@ -263,12 +283,6 @@ function countPatchLineChanges(patch: string): {
     if (line.startsWith('-')) removedLines += 1;
   }
   return { addedLines, removedLines };
-}
-
-function formatSignedBytes(bytes: number): string {
-  const sign = bytes >= 0 ? '+' : '';
-  if (Math.abs(bytes) >= 1024) return `${sign}${(bytes / 1024).toFixed(1)} KB`;
-  return `${sign}${bytes} B`;
 }
 
 function escapeTableCell(value: string): string {

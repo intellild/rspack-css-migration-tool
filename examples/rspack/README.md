@@ -1,10 +1,10 @@
 # Rspack CSS migration example
 
-`rspack.config.mjs` contains one configuration. `BUILTIN_CSS=true` selects
-Rspack's built-in CSS; otherwise it uses css-loader and
-`CssExtractRspackPlugin`.
+`rspack.config.mjs` contains one configuration. Set `BUILTIN_CSS=true` to use
+Rspack's built-in CSS; otherwise it builds the `css-loader` and
+`CssExtractRspackPlugin` baseline.
 
-Run these commands from the repository root:
+Run from the repository root:
 
 ```bash
 pnpm install
@@ -20,16 +20,16 @@ node scripts/compare-output-files.mjs \
   --out examples/rspack/dist/report.md
 ```
 
-Run both builds and the comparison with `pnpm run example:rspack`.
-Without an environment variable, `node examples/rspack/build.mjs` builds both
-variants. The runner also accepts `css-loader`, `builtin-css`, or `all`.
+Or run both builds and the comparison in one step:
 
-Both variants install `RspackOutputGraphPlugin`. The fixture includes nested,
-circular, repeated, and lazy module imports plus CSS Modules. Its entry and
-async CSS filenames deliberately differ between pipelines, so comparison uses
-module/chunk relationships. Declaration normalization handles generated class
-name differences.
+```bash
+pnpm run example:rspack
+```
 
-`dist/report.md` should show four matched and equivalent CSS assets, with no
-added, removed, or changed assets. `dist/report.diff` should report no content
-differences after formatting and normalization.
+`node examples/rspack/build.mjs` also accepts `css-loader`, `builtin-css`, or
+`all` (default).
+
+The example emits four CSS assets with intentionally different filenames and
+generated CSS Modules selectors between the two builds. Check `dist/report.md`
+for four matched and equivalent CSS assets with zero added, removed, or changed
+files, and `dist/report.diff` for no content differences.

@@ -1,6 +1,16 @@
 export type AssetKind =
   'css' | 'js' | 'map' | 'image' | 'font' | 'wasm' | 'html' | 'json' | 'other';
 
+export interface AssetKindSummary {
+  kind: AssetKind;
+  beforeCount: number;
+  afterCount: number;
+  beforeBytes: number;
+  afterBytes: number;
+  countDiff: number;
+  bytesDiff: number;
+}
+
 export interface NormalizeAssetNameOptions {
   collapseNumericChunks?: boolean;
   stripHash?: boolean;
@@ -22,12 +32,54 @@ const HASHED_GENERIC_ASSET = new RegExp(
 );
 const NUMERIC_CHUNK = /\/\d+(?=\.(?:js|css|mjs)(?:\.map)?$)/gi;
 
+export function normalizeSlashes(value: string): string {
+  return value.replace(/\\/g, '/');
+}
+
+export function normalizeExtensionFilter(
+  extensions?: string[],
+): Set<string> | null {
+  if (!extensions?.length) return null;
+  return new Set(
+    extensions.map((extension) => {
+      const lower = extension.toLowerCase();
+      return lower.startsWith('.') ? lower : `.${lower}`;
+    }),
+  );
+}
+
+export function summarizeAssetsByKind<
+  T extends { kind: AssetKind; bytes: number },
+>(beforeAssets: T[], afterAssets: T[]): AssetKindSummary[] {
+  const kinds = new Set<AssetKind>([
+    ...beforeAssets.map((asset) => asset.kind),
+    ...afterAssets.map((asset) => asset.kind),
+  ]);
+
+  return [...kinds].sort().map((kind) => {
+    const before = beforeAssets.filter((asset) => asset.kind === kind);
+    const after = afterAssets.filter((asset) => asset.kind === kind);
+    const beforeBytes = before.reduce((sum, asset) => sum + asset.bytes, 0);
+    const afterBytes = after.reduce((sum, asset) => sum + asset.bytes, 0);
+
+    return {
+      kind,
+      beforeCount: before.length,
+      afterCount: after.length,
+      beforeBytes,
+      afterBytes,
+      countDiff: after.length - before.length,
+      bytesDiff: afterBytes - beforeBytes,
+    };
+  });
+}
+
 export function normalizeAssetName(
   assetName: string,
   options: NormalizeAssetNameOptions = {},
 ): string {
   const resolvedOptions = { ...DEFAULT_NORMALIZE_OPTIONS, ...options };
-  let normalized = assetName.replace(/\\/g, '/').replace(/[?#].*$/, '');
+  let normalized = normalizeSlashes(assetName).replace(/[?#].*$/, '');
 
   if (resolvedOptions.stripHash) {
     normalized = normalized

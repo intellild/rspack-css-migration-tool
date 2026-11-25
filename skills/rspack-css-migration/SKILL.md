@@ -5,9 +5,9 @@ description: Migrate Rspack projects to built-in CSS and verify output parity. U
 
 # Rspack CSS migration
 
-Treat the migration as an output-equivalence exercise. Preserve a reproducible
-css-loader baseline, migrate the configuration, pair corresponding output
-assets, inspect their content diffs, and state whether the result is correct.
+Treat the migration as an output-equivalence exercise: capture a reproducible
+`css-loader` baseline, migrate the configuration, pair corresponding output
+assets, inspect content diffs, and report whether the result is equivalent.
 
 ## Discover the consumer project
 
@@ -25,25 +25,20 @@ record the pre-existing failure first.
 
 ## Use the installed tool
 
-Use the `rspack-css-migration-tool` dependency installed in the consumer
-project. The package includes the built plugin and comparison CLI. In a
-monorepo, resolve them from the package that owns the Rspack build.
-
-Verify the installed CLI with the consumer's package manager. For pnpm:
+Use the `rspack-css-migration-tool` package installed in the consumer project
+(in a monorepo, from the package that owns the build). Verify the CLI:
 
 ```bash
 pnpm --dir <consumer-package-root> exec rspack-css-output-compare --help
 ```
 
-If the dependency is missing, add it to that package's development dependencies
-using the project's package manager and dependency policy. Use the installed
-package without requiring a source checkout, a local library build, or
-`pnpm link`.
+If the dependency is missing, install it as a devDependency using the project's
+package manager.
 
 ## Capture the baseline
 
-Import `RspackOutputGraphPlugin` from `rspack-css-migration-tool` and add one
-instance to the baseline configuration:
+Import `RspackOutputGraphPlugin` from `rspack-css-migration-tool` and add it to
+the baseline configuration:
 
 ```js
 import { RspackOutputGraphPlugin } from 'rspack-css-migration-tool';
@@ -56,27 +51,45 @@ export default {
 };
 ```
 
-Build the unmodified css-loader configuration into a clean, dedicated output
-directory. Keep this directory unchanged during the migration. Confirm that it
-contains `.rspack-css-migration-tool/output-graph.json`.
+Build the unmodified `css-loader` configuration into a clean, dedicated output
+directory. Keep this directory unchanged during the migration and confirm that
+`<baseline-output-directory>/.rspack-css-migration-tool/output-graph.json`
+exists.
+
+## Rsbuild consumers
+
+For Rsbuild, register `pluginOutputGraph()` from `rspack-css-migration-tool` in
+both the baseline and migrated configurations:
+
+```js
+import { pluginOutputGraph } from 'rspack-css-migration-tool';
+
+export default {
+  plugins: [pluginOutputGraph()],
+};
+```
+
+When building multiple environments, give each environment its own output
+directory so graph manifests do not overwrite one another. Enable built-in CSS
+using Rsbuild's native `css` configuration and retain `css: false` as the
+baseline.
 
 ## Migrate the configuration
 
-Preserve a separate baseline configuration or another reproducible way to run
-the old build. Apply only the changes required for built-in CSS:
+Preserve a reproducible way to run the baseline build. Apply only the changes
+required for built-in CSS:
 
-- Change the CSS rule from `type: 'javascript/auto'` to
-  `type: 'css/auto'`.
+- Change the CSS rule from `type: 'javascript/auto'` to `type: 'css/auto'`.
 - Remove `CssExtractRspackPlugin.loader` and `css-loader` from the rule.
 - Remove `CssExtractRspackPlugin` from `plugins`.
-- Preserve preprocessors and transformations that built-in CSS does not
-  replace, such as Sass or project-specific PostCSS loaders.
+- Preserve preprocessors and transforms that built-in CSS does not replace,
+  such as Sass, Less, or project-specific PostCSS loaders.
 - Preserve `output.cssFilename`, `output.cssChunkFilename`, public path,
-  source-map, optimization, and split-chunk behavior unless the migration
-  requires a deliberate change.
-- Add `RspackOutputGraphPlugin` to the migrated configuration as well.
+  source-map, optimization, and split-chunk behavior unless a deliberate change
+  is required.
+- Add `RspackOutputGraphPlugin` to the migrated configuration.
 
-Translate CSS Modules options to built-in CSS configuration:
+Translate CSS Modules options:
 
 | css-loader option                | Built-in CSS option                              |
 | -------------------------------- | ------------------------------------------------ |
@@ -85,34 +98,16 @@ Translate CSS Modules options to built-in CSS configuration:
 | `modules.localIdentName`         | `module.generator['css/auto'].localIdentName`    |
 
 Do not assume custom `modules.auto`, `exportOnlyLocals`, import filters, URL
-filters, or loader-specific transforms have direct equivalents. Trace their
-actual behavior and either reproduce it explicitly or report the compatibility
-gap.
+filters, or loader-specific transforms have direct equivalents; trace their
+behavior and reproduce it explicitly or report the compatibility gap.
 
-Build the migrated configuration into a second clean output directory. Confirm
-that its output graph exists before comparing anything.
+Build the migrated configuration into a second clean output directory and
+confirm that its `.rspack-css-migration-tool/output-graph.json` exists before
+comparing.
 
-## Pair output assets
+## Compare outputs
 
-Most migrations should produce a one-to-one correspondence between baseline
-and migrated CSS assets. Filenames and content hashes may differ. The output
-graph comparer uses style modules, chunks, issuers, and entrypoints to pair
-renamed entry and async assets without relying on filename equality.
-
-Check the report's pairing before interpreting content:
-
-- Every expected baseline CSS asset should have exactly one migrated match.
-- `Added` and `Removed` should normally both be zero.
-- Review each match's score and reasons when the pairing is not obvious.
-- Treat unmatched or low-confidence assets as a build-graph difference, not a
-  content-formatting issue.
-
-Do not rename outputs merely to force filename equality and do not use
-filename-only matching as final migration evidence.
-
-## Generate report and diff
-
-Always request explicit report and unified-diff files:
+Run the comparer with explicit report and unified-diff paths:
 
 ```bash
 pnpm --dir <consumer-package-root> exec rspack-css-output-compare \
@@ -125,24 +120,20 @@ pnpm --dir <consumer-package-root> exec rspack-css-output-compare \
   --out <report-path>.md
 ```
 
-The comparer creates missing parent directories for both output paths. It
-writes the report and diff before returning the `--check` result, so inspect
-the files even when the command exits with status 1.
-
-Verify that both files exist and are non-empty:
+The report and diff are written even when `--check` exits with status 1.
+Verify both files exist and are non-empty:
 
 ```bash
 test -s <report-path>.md
 test -s <report-path>.diff
 ```
 
-The default diff is Prettier-formatted and normalizes generated CSS class
-selectors only when compatible declaration blocks can be paired. It does not
-normalize declaration values, rule order, at-rule context, added rules, or
-removed rules.
+By default, the comparer formats outputs with Prettier, canonicalizes `url()`
+quoting, and normalizes generated CSS Modules class selectors while preserving
+declaration values, rule order, at-rule context, and added or removed rules.
 
-When generated CSS Modules names may hide the raw difference, run a second
-diagnostic comparison:
+To inspect raw generated class-name and `url()` quoting differences as well, run
+a second comparison:
 
 ```bash
 pnpm --dir <consumer-package-root> exec rspack-css-output-compare \
@@ -151,59 +142,43 @@ pnpm --dir <consumer-package-root> exec rspack-css-output-compare \
   --extensions css \
   --require-graph \
   --no-css-selector-normalize \
+  --no-css-url-quote-normalize \
   --diff-out <report-path>.raw.diff \
   --out <report-path>.raw.md
 ```
 
-Keep the normalized diff for semantic comparison and the raw diff for
-explaining generated-name changes.
+## Review pairing and differences
 
-## Review differences
+Check asset pairing in the report before interpreting content diffs:
 
-Inspect the report, both diff modes when needed, and the corresponding emitted
-files. Most pairs should be identical after formatting and normalization. A
-small number may differ for understandable reasons:
+- Every expected baseline CSS asset should have exactly one migrated match, with
+  `Added` and `Removed` both zero.
+- Review match scores and reasons if any pairing looks unexpected; treat
+  unmatched or low-confidence assets as a build-graph difference rather than a
+  content issue.
+- Do not change output filenames just to force filename equality, do not rely on
+  filename-only matching, and do not weaken comparison flags to pass `--check`.
 
-- **CSS Modules class hashes:** raw selectors may differ between css-loader and
-  built-in CSS. Accept this only when the normalized declaration blocks and
-  selector structure are equivalent, each generated name is used consistently
-  by its build, and relevant application tests pass.
-- **Rule or chunk order:** inspect the exact moved rules in the diff and both
-  files. CSS order can change cascade behavior, so accept an order-only
-  difference only when overlapping selectors, specificity, layers, media
-  queries, and dependent runtime loading cannot change the result, or when a
-  browser-level test proves equivalent rendering.
-- **Formatting only:** Prettier removes this noise automatically. Do not report
-  formatting as a behavioral difference.
-- **Declaration, URL, source-map, or asset changes:** treat these as real until
-  the responsible configuration or loader behavior is explained and verified.
-- **Added, removed, skipped, or errored files:** do not declare the migration
-  correct while these remain unexplained.
+Inspect the report, diffs, and emitted files for remaining differences:
 
-The normalized `--check` result is a strict automated signal, not a substitute
-for reviewing exceptions. Conversely, do not reject a migration solely because
-the raw diff contains expected generated class names.
+- **CSS Modules class hashes:** accept raw selector differences only when
+  declaration blocks and selector structure match, each generated name is used
+  consistently by its build, and relevant tests pass.
+- **Rule or chunk order:** accept order-only differences only when overlapping
+  selectors, specificity, layers, media queries, and runtime loading order
+  cannot change rendering, or when browser tests confirm equivalent rendering.
+- **Formatting only:** already eliminated by Prettier; do not report formatting
+  as a behavioral change.
+- **Declaration, URL, source-map, or asset changes:** treat as real behavioral
+  changes until explained and verified.
+- **Added, removed, skipped, or errored files:** do not conclude the migration
+  is correct while any remain unexplained.
 
 ## Validate the consumer
 
-Run the consumer's production build, focused CSS or component tests, and
+Run the consumer's production build, focused CSS/component tests, and
 browser or visual tests when order-sensitive output changed. Verify lazy chunks
-and CSS Modules usage at runtime, not only the initial entry output.
-
-## Diagnose pairing failures
-
-- Missing graphs: verify the plugin is present in both effective
-  configurations and inspect the actual output directories.
-- Added or removed assets: compare entry, async chunk, extraction, and
-  split-chunk behavior before inspecting content.
-- Changed declarations: inspect the generated report and diff, then check
-  retained preprocessors, PostCSS behavior, minimization, URL handling, and
-  source maps.
-- Weak or incorrect asset pairing: compare plugin `context`, module resources,
-  and chunk membership. Do not make filenames equal merely to hide a graph
-  mismatch.
-
-Do not weaken comparison flags to make a migration pass.
+and CSS Modules usage at runtime, not only initial entry output.
 
 ## Report the conclusion
 

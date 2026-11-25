@@ -1,11 +1,10 @@
 # Rsbuild CSS migration example
 
-`rsbuild.config.mjs` uses Rsbuild's default css-loader pipeline unless
-`BUILTIN_CSS=true`, which loads `pluginBuiltinCss` from this package.
-The plugin configuration demonstrates the top-level export settings and
-nested `modules` hash/name and parser options.
+`rsbuild.config.mjs` uses Rsbuild's `css-loader` baseline (`css: false`) unless
+`BUILTIN_CSS=true`, which enables Rsbuild's native `css` configuration
+(requiring an Rsbuild version with built-in CSS support).
 
-Run these commands from the repository root:
+Run from the repository root:
 
 ```bash
 pnpm install
@@ -21,18 +20,19 @@ node scripts/compare-output-files.mjs \
   --out examples/rsbuild/dist/report.md
 ```
 
-Run both builds and the comparison with `pnpm run example:rsbuild`.
-Without an environment variable, `node examples/rsbuild/build.mjs` builds both
-variants. The runner also accepts `css-loader`, `builtin-css`, or `all`.
+Or run both builds and the comparison in one step:
 
-The source fixture mirrors the Rspack example and emits four entry/async CSS
-assets. Both builds include `RspackOutputGraphPlugin`, and their CSS filenames
-and generated selectors intentionally differ.
+```bash
+pnpm run example:rsbuild
+```
 
-`dist/report.md` should show four matched and equivalent CSS assets, with no
-added, removed, or changed assets. The example disables Lightning CSS
-transforms to compare the CSS pipeline migration directly.
+`node examples/rsbuild/build.mjs` also accepts `css-loader`, `builtin-css`, or
+`all` (default).
 
-For projects using CSS `?url`, follow the `import.meta.resolve` migration
-instructions in
-[the migration skill](../../.trae/skills/rspack-css-migration/SKILL.md).
+The example emits four CSS assets with intentionally different filenames and
+generated selectors between the two builds. Check `dist/report.md` for four
+matched and equivalent CSS assets with zero added, removed, or changed files,
+and `dist/report.diff` for no content differences.
+
+Follow [the migration skill](../../skills/rspack-css-migration/SKILL.md) to run
+and verify a migration.

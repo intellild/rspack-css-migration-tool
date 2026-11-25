@@ -5,7 +5,6 @@ export default defineConfig({
   source: {
     entry: {
       index: './src/index.ts',
-      'css-url-loader': './src/css-url-loader.ts',
     },
   },
 });

@@ -5,6 +5,7 @@ export {
   normalizeAssetName,
   signedBytes,
   type AssetKind,
+  type AssetKindSummary,
   type NormalizeAssetNameOptions,
 } from './normalize';
 
@@ -13,7 +14,6 @@ export {
   createOutputFileManifest,
   renderOutputFileDiffMarkdown,
   summarizeFiles,
-  writeOutputFileDiffMarkdown,
   type CreateOutputFileManifestOptions,
   type FileManifestComparison,
   type FileManifestSummary,
@@ -22,19 +22,6 @@ export {
   type OutputFileRecord,
   type RenderFileManifestDiffOptions,
 } from './file-manifest';
-
-export {
-  compareScmManifests,
-  loadScmManifestLog,
-  parseScmManifestLog,
-  renderScmManifestDiffMarkdown,
-  type RenderScmManifestDiffOptions,
-  type ScmManifest,
-  type ScmManifestComparison,
-  type ScmManifestMatch,
-  type ScmManifestRecord,
-  type ScmManifestSummary,
-} from './scm-manifest';
 
 export {
   DEFAULT_OUTPUT_GRAPH_FILENAME,
@@ -65,6 +52,12 @@ export {
 } from './css-declaration-normalize';
 
 export {
+  normalizeCssUrlQuotes,
+  normalizeCssUrlQuotesWithCount,
+  type NormalizedCssUrlQuotes,
+} from './css-url-normalize';
+
+export {
   compareOutputContents,
   formatOutputText,
   renderOutputContentDiff,
@@ -77,8 +70,4 @@ export {
   type RenderOutputContentSummaryOptions,
 } from './output-content-compare';
 
-export {
-  pluginBuiltinCss,
-  type BuiltinCssModulesOptions,
-  type PluginBuiltinCssOptions,
-} from './rsbuild-plugin';
+export { pluginOutputGraph } from './rsbuild-output-graph-plugin';

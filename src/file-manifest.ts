@@ -1,25 +1,20 @@
-import {
-  existsSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import {
-  bytesToHuman,
   getAssetExtension,
   getAssetKind,
   normalizeAssetName,
+  normalizeExtensionFilter,
+  normalizeSlashes,
   signedBytes,
+  summarizeAssetsByKind,
   type AssetKind,
+  type AssetKindSummary,
   type NormalizeAssetNameOptions,
 } from './normalize';
-import {
-  renderOutputContentSummaryMarkdown,
-  type OutputContentComparison,
-} from './output-content-compare';
+import type { OutputContentComparison } from './output-content-compare';
+import { renderComparisonReportMarkdown } from './report-markdown';
 
 export interface OutputFileRecord {
   path: string;
@@ -50,30 +45,13 @@ export interface FileManifestComparison {
   summary: FileManifestSummary[];
 }
 
-export interface FileManifestSummary {
-  kind: AssetKind;
-  beforeCount: number;
-  afterCount: number;
-  beforeBytes: number;
-  afterBytes: number;
-  countDiff: number;
-  bytesDiff: number;
-}
+export type FileManifestSummary = AssetKindSummary;
 
 export interface MatchedOutputFile {
   before: OutputFileRecord;
   after: OutputFileRecord;
   bytesDiff: number;
   contentChanged: boolean | null;
-}
-
-function normalizeExtensions(extensions?: string[]): Set<string> | null {
-  if (!extensions?.length) return null;
-  return new Set(
-    extensions.map((extension) =>
-      extension.startsWith('.') ? extension.toLowerCase() : `.${extension}`,
-    ),
-  );
 }
 
 function shouldIgnore(relativePath: string, ignore?: RegExp[]): boolean {
@@ -93,7 +71,7 @@ export function createOutputFileManifest(
     throw new Error(`Output root does not exist: ${absoluteRoot}`);
   }
 
-  const extensionFilter = normalizeExtensions(options.extensions);
+  const extensionFilter = normalizeExtensionFilter(options.extensions);
   const files: OutputFileRecord[] = [];
   const stack = [absoluteRoot];
 
@@ -103,10 +81,9 @@ export function createOutputFileManifest(
 
     for (const entry of readdirSync(current, { withFileTypes: true })) {
       const absolutePath = path.join(current, entry.name);
-      const relativePath = path
-        .relative(absoluteRoot, absolutePath)
-        .split(path.sep)
-        .join('/');
+      const relativePath = normalizeSlashes(
+        path.relative(absoluteRoot, absolutePath),
+      );
 
       if (shouldIgnore(relativePath, options.ignore)) continue;
       if (entry.isDirectory()) {
@@ -201,27 +178,7 @@ export function summarizeFiles(
   beforeFiles: OutputFileRecord[],
   afterFiles: OutputFileRecord[],
 ): FileManifestSummary[] {
-  const kinds = new Set<AssetKind>([
-    ...beforeFiles.map((file) => file.kind),
-    ...afterFiles.map((file) => file.kind),
-  ]);
-
-  return [...kinds].sort().map((kind) => {
-    const before = beforeFiles.filter((file) => file.kind === kind);
-    const after = afterFiles.filter((file) => file.kind === kind);
-    const beforeBytes = before.reduce((sum, file) => sum + file.bytes, 0);
-    const afterBytes = after.reduce((sum, file) => sum + file.bytes, 0);
-
-    return {
-      kind,
-      beforeCount: before.length,
-      afterCount: after.length,
-      beforeBytes,
-      afterBytes,
-      countDiff: after.length - before.length,
-      bytesDiff: afterBytes - beforeBytes,
-    };
-  });
+  return summarizeAssetsByKind(beforeFiles, afterFiles);
 }
 
 export interface RenderFileManifestDiffOptions {
@@ -236,86 +193,49 @@ export function renderOutputFileDiffMarkdown(
   options: RenderFileManifestDiffOptions = {},
 ): string {
   const top = options.top ?? 50;
-  const lines = [
-    `# ${options.title ?? 'Output File Diff Report'}`,
-    '',
-    `- Before: \`${comparison.beforeRoot}\``,
-    `- After: \`${comparison.afterRoot}\``,
-    `- Matched: ${comparison.matched.length}`,
-    `- Added: ${comparison.added.length}`,
-    `- Removed: ${comparison.removed.length}`,
-    '',
-    '## Summary',
-    '',
-    '| Kind | Before | After | Count Diff | Size Diff |',
-    '|---|---:|---:|---:|---:|',
-  ];
-
-  for (const row of comparison.summary) {
-    lines.push(
-      `| ${row.kind} | ${row.beforeCount} / ${bytesToHuman(row.beforeBytes)} | ${row.afterCount} / ${bytesToHuman(row.afterBytes)} | ${row.countDiff >= 0 ? '+' : ''}${row.countDiff} | ${signedBytes(row.bytesDiff)} |`,
-    );
-  }
-
   const changed = comparison.matched
     .filter((item) => item.bytesDiff !== 0 || item.contentChanged)
     .sort(
       (left, right) => Math.abs(right.bytesDiff) - Math.abs(left.bytesDiff),
     );
 
-  lines.push('', `## Changed Files (${changed.length})`, '');
-  lines.push('| Before | After | Size Diff | Content |');
-  lines.push('|---|---|---:|---|');
-  for (const item of changed.slice(0, top)) {
-    const content =
-      item.contentChanged === null
-        ? 'not hashed'
-        : item.contentChanged
-          ? 'changed'
-          : 'same';
-    lines.push(
-      `| \`${item.before.path}\` | \`${item.after.path}\` | ${signedBytes(item.bytesDiff)} | ${content} |`,
-    );
-  }
-  if (changed.length > top) {
-    lines.push(`| ... | ... | ... | ${changed.length - top} more |`);
-  }
-
-  lines.push('', `## Added Files (${comparison.added.length})`, '');
-  for (const file of comparison.added.slice(0, top)) {
-    lines.push(`- \`${file.path}\` (${bytesToHuman(file.bytes)})`);
-  }
-  if (comparison.added.length > top) {
-    lines.push(`- ... ${comparison.added.length - top} more`);
-  }
-
-  lines.push('', `## Removed Files (${comparison.removed.length})`, '');
-  for (const file of comparison.removed.slice(0, top)) {
-    lines.push(`- \`${file.path}\` (${bytesToHuman(file.bytes)})`);
-  }
-  if (comparison.removed.length > top) {
-    lines.push(`- ... ${comparison.removed.length - top} more`);
-  }
-
-  if (options.contentComparison) {
-    lines.push(
-      '',
-      ...renderOutputContentSummaryMarkdown(options.contentComparison, {
-        diffFilename: options.contentDiffFilename,
-        top,
-      })
-        .trimEnd()
-        .split('\n'),
-    );
-  }
-
-  return `${lines.join('\n')}\n`;
-}
-
-export function writeOutputFileDiffMarkdown(
-  comparison: FileManifestComparison,
-  outputPath: string,
-  options: RenderFileManifestDiffOptions = {},
-): void {
-  writeFileSync(outputPath, renderOutputFileDiffMarkdown(comparison, options));
+  return renderComparisonReportMarkdown({
+    title: options.title ?? 'Output File Diff Report',
+    beforeLabel: comparison.beforeRoot,
+    afterLabel: comparison.afterRoot,
+    matchedCount: comparison.matched.length,
+    added: comparison.added.map((file) => ({
+      label: file.path,
+      bytes: file.bytes,
+    })),
+    removed: comparison.removed.map((file) => ({
+      label: file.path,
+      bytes: file.bytes,
+    })),
+    summary: comparison.summary,
+    changedSection: {
+      title: 'Changed Files',
+      headers: ['Before', 'After', 'Size Diff', 'Content'],
+      alignments: ['---', '---', '---:', '---'],
+      totalCount: changed.length,
+      rows: changed.slice(0, top).map((item) => {
+        const content =
+          item.contentChanged === null
+            ? 'not hashed'
+            : item.contentChanged
+              ? 'changed'
+              : 'same';
+        return [
+          `\`${item.before.path}\``,
+          `\`${item.after.path}\``,
+          signedBytes(item.bytesDiff),
+          content,
+        ];
+      }),
+    },
+    itemNoun: 'Files',
+    top,
+    contentComparison: options.contentComparison,
+    contentDiffFilename: options.contentDiffFilename,
+  });
 }
